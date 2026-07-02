@@ -1,5 +1,4 @@
-
-`default_nettype none
+`timescale 1ns / 1ps
 
 module scrambler #(
 
@@ -50,10 +49,37 @@ module scrambler #(
 
     logic [57:0] state, state_next;
     // implement the parallel XOR equations (3 ranges for x <= I1,  I1 < x <= I0, I0 < x, as described above)
-
-
-    // *: state_next stores last 58 bits of OUTPUT (not input) in reversed order: state_next[i] = OUT[63-i]
-    // *: update state with state_next on each valid cycle
-    // *: pass sync_header through unchanged
+    integer j;
+    always_ff @(posedge clk) begin
+        if (~rst_n) begin
+            state <= '0;
+            o_valid <= '0;
+        end else begin
+            if (i_valid) begin
+                for (j=0; j < 64; j++) begin
+                    state[j] <= o_scram_data[63-j];
+                end
+                o_valid <= 1'b1;
+            end else begin
+                o_valid <= 1'b0;
+            end
+        end
+    end
+    genvar i;
+    generate
+        for (i=0; i < 64; i++) begin
+            if (i < I1) begin
+                assign o_scram_data[i] = i_enc_data[i] ^ state[38-i] ^ state[57-i];
+            end else if (i < I0) begin
+                assign o_scram_data[i] = i_enc_data[i] ^ o_scram_data[i-39] ^ state[57-i];
+            end else begin
+                assign o_scram_data[i] = i_enc_data[i] ^ o_scram_data[i-39] ^ o_scram_data[i-58];
+            end
+        end
+    endgenerate
+    assign o_scram_data[65:64] = i_enc_data[65:64];
+//     *: state_next stores last 58 bits of OUTPUT (not input) in reversed order: state_next[i] = OUT[63-i]
+//     *: update state with state_next on each valid cycle
+//     *: pass sync_header through unchanged
  
 endmodule

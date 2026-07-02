@@ -1,5 +1,3 @@
-`default_nettype none
-
 module block_sync_rx #(
 
     parameter HEAD_W = 2
