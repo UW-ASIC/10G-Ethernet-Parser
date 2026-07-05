@@ -1,7 +1,5 @@
 
 
-`default_nettype none
-
 
 module gearbox_tx #(
 

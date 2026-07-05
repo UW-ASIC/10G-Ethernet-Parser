@@ -1,5 +1,3 @@
-`default_nettype none
-
 module block_sync_rx #(
 
     parameter HEAD_W = 2
@@ -8,7 +6,7 @@ module block_sync_rx #(
     input  logic        rst_n,
 
     // from GTY SerDes (directly, same signal also goes to gearbox)
-    +
+    
     input  logic                i_serdes_v,   // serdes data is valid (CDR locked)
 
     // from gearbox
