@@ -160,23 +160,6 @@ module decoder #(
                     end
 
                     BLOCK_TYPE_OS_04: begin
-                        // O0 D1 D2 D3 / S4 D5 D6 D7 
-                        o_data[7 : 0] = decode_o_code(i_data[37 : 34]); 
-                        o_data[31 : 8] = i_data[33 : 10]; 
-                        o_data[39 : 32] = 8'hfb; 
-                        o_data[63 : 40] = i_data[65 : 42]; 
-
-                        // update flags 
-                        o_ctrl = 8'h11;         // 0001 0001
-                        o_keep = 8'hff; 
-                        o_start = 1'b1; 
-                        // check error 
-                        if (is_error(o_data[7:0])) begin 
-                            o_error = 1'b1; 
-                        end
-                    end
-
-                    BLOCK_TYPE_OS_START: begin
                         // O0 D1 D2 D3 / O4 D5 D6 D7 
                         o_data[7 : 0] = decode_o_code(i_data[37 : 34]); 
                         o_data[31 : 8] = i_data[33 : 10]; 
@@ -184,11 +167,28 @@ module decoder #(
                         o_data[63 : 40] = i_data[65 : 42]; 
 
                         // update flags 
+                        o_ctrl = 8'h11;         // 0001 0001
+                        o_keep = 8'hff; 
+                        o_start = 1'b1; 
+                        // check error 
+                        if (is_error(o_data[7:0]) || is_error(o_data[39:32])) begin 
+                            o_error = 1'b1; 
+                        end
+                    end
+
+                    BLOCK_TYPE_OS_START: begin
+                        // O0 D1 D2 D3 / S4 D5 D6 D7 
+                        o_data[7 : 0] = decode_o_code(i_data[37 : 34]); 
+                        o_data[31 : 8] = i_data[33 : 10]; 
+                        o_data[39 : 32] = 8'hfb; 
+                        o_data[63 : 40] = i_data[65 : 42]; 
+
+                        // update flags 
                         o_ctrl = 8'h11;         // 0001 0001 
                         o_keep = 8'hff; 
                         o_start = 1'b1;
                         // check error 
-                        if (is_error(o_data[7:0]) || is_error(o_data[39:32])) begin 
+                        if (is_error(o_data[7:0])) begin 
                             o_error = 1'b1; 
                         end
                     end
