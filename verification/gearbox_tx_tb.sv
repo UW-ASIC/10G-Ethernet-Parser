@@ -51,7 +51,6 @@ module gearbox_tx_tb;
         @(posedge clk);
         @(posedge clk);
         rst_n = 1;
-        @(posedge clk);
     endtask
 
     // task: feed one block (respects o_accept)
@@ -135,68 +134,47 @@ module gearbox_tx_tb;
     // feed 32 known blocks, collect 33 output words, concatenate output
     // bits and verify they match the concatenated input bits.
     task automatic test_bitstream_integrity();
-        $display("\n[TEST 3] Bitstream integrity over one full period (32 blocks -> 33 words)");
-        do_reset();
-
         // generate 32 deterministic blocks
         logic [BLOCK_W-1:0] blocks [0:31];
-        for (int i = 0; i < 32; i++) begin
-            blocks[i] = {(i[5:0] * 7 + 3), 58'(i * 64'hDEAD_BEEF_CAFE_0001 + 1), i[1:0] ^ 2'b01};
-        end
-
         // total input bits: 32 * 66 = 2112
         // total output bits: 33 * 64 = 2112
         logic [2111:0] input_stream;
         logic [2111:0] output_stream;
+        logic [DATA_W-1:0] captured [0:32];
+        int feed_idx;
+        int capture_idx;
+
+        $display("\n[TEST 3] Bitstream integrity over one full period (32 blocks -> 33 words)");
+        do_reset();
+
+        for (int i = 0; i < 32; i++) begin
+            blocks[i] = {6'(i[5:0] * 7 + 3), 58'(i * 64'hDEAD_BEEF_CAFE_0001 + 1), i[1:0] ^ 2'b01};
+        end
 
         // build expected input bitstream (block 0 in LSBs, block 31 in MSBs)
         for (int i = 0; i < 32; i++) begin
             input_stream[i*66 +: 66] = blocks[i];
         end
 
-        // feed blocks and collect outputs
-        // output is registered so there's 1 cycle latency.
-        // cycle 0: feed block[0], output is stale (reset value)
-        // cycle 1: feed block[1], output[0] appears
-        // ...
-        // cycle 31: feed block[31], output[30] appears
-        // cycle 32: o_accept low (buffer flush), output[31] appears
-        // cycle 33: idle, output[32] appears (the flush word)
-
-        logic [DATA_W-1:0] captured [0:32];
-        int cap_idx;
-        cap_idx = 0;
-
-        for (int i = 0; i < 32; i++) begin
-            while (!o_accept) begin
-                @(posedge clk);
-                // capture output during backpressure cycle too
-                if (cap_idx > 0 || i > 0) begin
-                    @(negedge clk);
-                    captured[cap_idx] = o_data;
-                    cap_idx++;
-                    @(posedge clk);
-                end
+        // feed blocks and collect outputs using a unified pipeline loop
+        feed_idx = 0;
+        capture_idx = 0;
+        while (capture_idx < 33) begin
+            if (feed_idx < 32 && o_accept) begin
+                i_head = blocks[feed_idx][1:0];
+                i_data = blocks[feed_idx][65:2];
+            end else begin
+                i_head = '0;
+                i_data = '0;
             end
-            i_head = blocks[i][1:0];
-            i_data = blocks[i][65:2];
-            @(posedge clk);
-            // capture output from previous cycle (1 cycle latency)
-            if (i > 0) begin
-                @(negedge clk);
-                captured[cap_idx] = o_data;
-                cap_idx++;
-                @(posedge clk);
-            end
-        end
 
-        // wait for remaining outputs (seq=32 flush + its registered output)
-        for (int i = 0; i < 3; i++) begin
             @(posedge clk);
             @(negedge clk);
-            if (cap_idx <= 32) begin
-                captured[cap_idx] = o_data;
-                cap_idx++;
+            captured[capture_idx] = o_data;
+            capture_idx++;
+
+            if (feed_idx < 32 && o_accept) begin
+                feed_idx++;
             end
         end
 
@@ -225,6 +203,7 @@ module gearbox_tx_tb;
     // test 4: known pattern — all-ones blocks
     // ================================================================
     task automatic test_all_ones();
+        logic all_ok;
         $display("\n[TEST 4] All-ones blocks produce all-ones output");
         do_reset();
 
@@ -244,7 +223,6 @@ module gearbox_tx_tb;
 
         // by now the pipeline is full of ones; check a few outputs
         // (skip first output which may contain reset-to-ones transition)
-        logic all_ok;
         all_ok = 1;
         for (int i = 0; i < 5; i++) begin
             // keep feeding ones
@@ -270,6 +248,7 @@ module gearbox_tx_tb;
     // test 5: known pattern — all-zeros blocks
     // ================================================================
     task automatic test_all_zeros();
+        logic all_ok;
         $display("\n[TEST 5] All-zeros blocks produce all-zeros output");
         do_reset();
 
@@ -284,7 +263,6 @@ module gearbox_tx_tb;
         @(posedge clk);
         @(negedge clk);
 
-        logic all_ok;
         all_ok = 1;
         for (int i = 0; i < 5; i++) begin
             while (!o_accept) @(posedge clk);
@@ -309,14 +287,15 @@ module gearbox_tx_tb;
     // test 6: o_accept timing — exactly 1 cycle low every 33 cycles
     // ================================================================
     task automatic test_accept_period();
-        $display("\n[TEST 6] o_accept deasserts for exactly 1 cycle every 33 cycles");
-        do_reset();
-
         int cycle_count;
         int deassert_count;
         int last_deassert;
         int gaps [0:3];
         int gap_idx;
+        logic gaps_ok;
+
+        $display("\n[TEST 6] o_accept deasserts for exactly 1 cycle every 33 cycles");
+        do_reset();
 
         cycle_count    = 0;
         deassert_count = 0;
@@ -351,7 +330,6 @@ module gearbox_tx_tb;
         end
 
         // check gap between deassertions is 33
-        logic gaps_ok;
         gaps_ok = 1;
         for (int g = 0; g < gap_idx; g++) begin
             if (gaps[g] != 33) begin
@@ -371,11 +349,12 @@ module gearbox_tx_tb;
     // test 7: multi-period sustained streaming with unique blocks
     // ================================================================
     task automatic test_sustained_streaming();
+        int blocks_fed;
+        int outputs_collected;
+
         $display("\n[TEST 7] Sustained streaming over 3 full periods (96 blocks)");
         do_reset();
 
-        int blocks_fed;
-        int outputs_collected;
         blocks_fed = 0;
         outputs_collected = 0;
 
