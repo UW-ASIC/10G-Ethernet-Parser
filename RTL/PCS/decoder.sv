@@ -169,7 +169,6 @@ module decoder #(
                         // update flags 
                         o_ctrl = 8'h11;         // 0001 0001
                         o_keep = 8'hff; 
-                        o_start = 1'b1; 
                         // check error 
                         if (is_error(o_data[7:0]) || is_error(o_data[39:32])) begin 
                             o_error = 1'b1; 
@@ -235,7 +234,7 @@ module decoder #(
 
                         // update flags 
                         o_ctrl = 8'hff;         // 1111 1111
-                        o_keep = 8'h01;         // 0000 0001
+                        o_keep = 8'h00;         // 0000 0000
                         o_terminate = 1'b1; 
                         // check error 
                         if (is_error(o_data[15:8]) || is_error(o_data[23:16]) || is_error(o_data[31:24]) || is_error(o_data[39:32]) || is_error(o_data[47:40]) || is_error(o_data[55:48]) || is_error(o_data[63:56])) begin 
@@ -256,7 +255,7 @@ module decoder #(
 
                         // update flags 
                         o_ctrl = 8'hfe;         // 1111 1110
-                        o_keep = 8'h03;         // 0000 0011
+                        o_keep = 8'h01;         // 0000 0001
                         o_terminate = 1'b1; 
                         // check error 
                         if (is_error(o_data[23:16]) || is_error(o_data[31:24]) || is_error(o_data[39:32]) || is_error(o_data[47:40]) || is_error(o_data[55:48]) || is_error(o_data[63:56])) begin 
@@ -276,7 +275,7 @@ module decoder #(
 
                         // update flags 
                         o_ctrl = 8'hfc;         // 1111 1100
-                        o_keep = 8'h07;         // 0000 0111
+                        o_keep = 8'h03;         // 0000 0011
                         o_terminate = 1'b1; 
                         // check error 
                         if (is_error(o_data[31:24]) || is_error(o_data[39:32]) || is_error(o_data[47:40]) || is_error(o_data[55:48]) || is_error(o_data[63:56])) begin 
@@ -295,7 +294,7 @@ module decoder #(
 
                         // update flags 
                         o_ctrl = 8'hf8;         // 1111 1000
-                        o_keep = 8'h0f;         // 0000 1111
+                        o_keep = 8'h07;         // 0000 0111
                         o_terminate = 1'b1; 
                         // check error 
                         if (is_error(o_data[39:32]) || is_error(o_data[47:40]) || is_error(o_data[55:48]) || is_error(o_data[63:56])) begin 
@@ -313,7 +312,7 @@ module decoder #(
 
                         // update flags 
                         o_ctrl = 8'hf0;         // 1111 0000
-                        o_keep = 8'h1f;         // 0001 1111
+                        o_keep = 8'h0f;         // 0000 1111
                         o_terminate = 1'b1; 
                         // check error 
                         if (is_error(o_data[47:40]) || is_error(o_data[55:48]) || is_error(o_data[63:56])) begin 
@@ -330,7 +329,7 @@ module decoder #(
 
                         // update flags 
                         o_ctrl = 8'he0;         // 1110 0000
-                        o_keep = 8'h3f;         // 0011 1111
+                        o_keep = 8'h1f;         // 0001 1111
                         o_terminate = 1'b1; 
                         // check error 
                         if (is_error(o_data[55:48]) || is_error(o_data[63:56])) begin 
@@ -346,7 +345,7 @@ module decoder #(
 
                         // update flags 
                         o_ctrl = 8'hc0;         // 1100 0000
-                        o_keep = 8'h7f;         // 0111 1111
+                        o_keep = 8'h3f;         // 0011 1111
                         o_terminate = 1'b1; 
                         // check error 
                         if (is_error(o_data[63:56])) begin 
@@ -361,7 +360,7 @@ module decoder #(
 
                         // update flags 
                         o_ctrl = 8'h80;         // 1000 0000
-                        o_keep = 8'hff;         // 1111 1111
+                        o_keep = 8'h7f;         // 0111 1111
                         o_terminate = 1'b1; 
                     end
 
