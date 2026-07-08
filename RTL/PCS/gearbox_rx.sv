@@ -1,4 +1,6 @@
 
+`default_nettype none
+
 module gearbox_rx #(
 
     parameter DATA_W = 64,
@@ -23,6 +25,7 @@ module gearbox_rx #(
 );
 
     localparam BLOCK_W = DATA_W + HEAD_W;  // 66 bits in total
+    
 
     /* this component utilizes an architecture called a barrel shifter. while shift registers can provide single bit shifts,
          we need to support arbitrary shift amounts to extract 66-bit blocks from a continuously drifting offset within the 64-bit input bus. 
@@ -53,5 +56,40 @@ module gearbox_rx #(
     // implement the sequence counter with slip and pma_lock handling
     // *: o_head is the bottom 2 bits of the barrel shifter output, sent out to block_sync for alignment correction. 
 
+    logic [(DATA_W + DATA_W - 1): 0] buffer;
+    logic [5:0] count;
+    logic [5:0] saved_count;
+    logic [63:0] payload;
+    logic underflow;
+
+
+    assign o_valid = i_pma_lock && (count != 6'd0) && (count != 6'd1) && (i_slip && (count != 6'd2)) && (!underflow);
+
+    assign o_data = {payload, o_head};
+
+    always @(posedge clk) begin
+        buffer <= {buffer[63:0], i_data};
+        if (!i_pma_lock)
+            count <= 6'd63;
+        else begin
+            if (underflow) begin
+                payload <= buffer[(7'd127 -{1'b0, saved_count}) -: 64];
+                underflow <= 1'b0;
+            end
+            if (!o_valid) begin
+                o_head <= buffer[({1'b0, count} + 7'd64)-:2];
+                count <= (i_slip)? (count - 6'd3):(count - 6'd2);
+                saved_count <= count;
+                underflow <= 1'b1;
+            end
+            else begin
+                count <= (i_slip)? (count - 6'd3):(count - 6'd2);
+                payload <= buffer[({1'b0, count} + 7'd64 - HEAD_W[6:0])-:64]; //count is concatenated so that adding 7'd64 does not overflow
+                o_head <= buffer[({1'b0, count} + 7'd64)-:2];
+            end
+        end
+    end
 
 endmodule
+
+
