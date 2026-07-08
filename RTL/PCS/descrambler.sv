@@ -60,10 +60,10 @@ module descrambler #(
         end
     end
     // *: update state with state_next on each valid cycle
-    always @(posedge clk or negedge rst_n) begin
+    always @(posedge clk) begin
         //if(!rst_n)
         if(!rst_n) begin
-            state <= 0;
+            state <= '1; 
             o_valid <= 0;
             total_descram<= 0;
         end else begin
