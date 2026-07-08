@@ -1,5 +1,4 @@
-
-
+`default_nettype none
 // this module is purely combinational. clk/rst_n are included for optional output registering only.
 
 module encoder #(
@@ -28,8 +27,8 @@ module encoder #(
     localparam CTRL_W = 7;
 
     // block type codes from IEEE 802.3 clause 49 figure 49-7
-    localparam [BLOCK_TYPE_W-1:0]
-        BLOCK_TYPE_CTRL     = 8'h1e,
+    localparam [7:0]
+    	BLOCK_TYPE_CTRL     = 8'h1e,
         BLOCK_TYPE_OS_4     = 8'h2d,
         BLOCK_TYPE_START_4  = 8'h33,
         BLOCK_TYPE_OS_04    = 8'h55,
@@ -78,5 +77,121 @@ module encoder #(
 
 
     // *: since this module is purely combinational, o_valid mirrors i_valid.
+
+
+	logic [DATA_W/8-1:0] term_pos;
+
+    	always_comb 
+	begin
+        	o_valid  = i_valid;
+        	o_data   = '0;
+        	term_pos = i_keep + 8'd1;
+
+        	// default: idle control block
+        	o_data[65:64] = 2'b10;
+        	o_data[7:0]   = BLOCK_TYPE_CTRL;
+        	o_data[63:8]  = {8{CTRL_IDLE}};
+
+        if (i_ctrl == 8'h00) 
+	begin
+        	// pure data block
+        	o_data[65:64] = 2'b01;
+        	o_data[63:0]  = i_data;
+        end
+
+        else if (i_idle) 
+	begin
+        	// all idle control block
+        	o_data[65:64] = 2'b10;
+         	o_data[7:0]   = BLOCK_TYPE_CTRL;
+        	o_data[63:8]  = {8{CTRL_IDLE}};
+        end
+
+        else if (i_start) 
+	begin
+            	// start in lane 0: /S/ D1 D2 D3 D4 D5 D6 D7
+            	o_data[65:64] = 2'b10;
+            	o_data[7:0]   = BLOCK_TYPE_START_0;
+            	o_data[63:8]  = i_data[63:8];
+        end
+
+        else if (i_terminate) 
+	begin
+        	o_data[65:64] = 2'b10;
+
+        	unique case (term_pos)
+
+                8'b0000_0001: 
+		begin
+                	// terminate in lane 0: /T/ C1 C2 C3 C4 C5 C6 C7
+                	o_data[7:0]   = BLOCK_TYPE_TERM_0;
+                	o_data[56:8]  = {7{CTRL_IDLE}};
+                end
+
+                8'b0000_0010: 
+		begin
+                	// terminate in lane 1: D0 /T/ C2 C3 C4 C5 C6 C7
+                	o_data[7:0]   = BLOCK_TYPE_TERM_1;
+                	o_data[15:8]  = i_data[7:0];
+                	o_data[57:16] = {6{CTRL_IDLE}};
+                end
+
+                8'b0000_0100: 
+		begin
+                	// terminate in lane 2: D0 D1 /T/ C3 C4 C5 C6 C7
+                	o_data[7:0]   = BLOCK_TYPE_TERM_2;
+                 	o_data[23:8]  = i_data[15:0];
+                	o_data[58:24] = {5{CTRL_IDLE}};
+                end
+
+                8'b0000_1000: 
+		begin
+                	// terminate in lane 3: D0 D1 D2 /T/ C4 C5 C6 C7
+                	o_data[7:0]   = BLOCK_TYPE_TERM_3;
+                	o_data[31:8]  = i_data[23:0];
+                	o_data[59:32] = {4{CTRL_IDLE}};
+                end
+
+                8'b0001_0000: 
+		begin
+                	// terminate in lane 4: D0 D1 D2 D3 /T/ C5 C6 C7
+                	o_data[7:0]   = BLOCK_TYPE_TERM_4;
+                 	o_data[39:8]  = i_data[31:0];
+                	o_data[60:40] = {3{CTRL_IDLE}};
+                end
+
+                8'b0010_0000: 
+		begin
+                	// terminate in lane 5: D0 D1 D2 D3 D4 /T/ C6 C7
+                   	o_data[7:0]   = BLOCK_TYPE_TERM_5;
+                	o_data[47:8]  = i_data[39:0];
+                	o_data[61:48] = {2{CTRL_IDLE}};
+                end
+
+                8'b0100_0000: 
+		begin
+                	// terminate in lane 6: D0 D1 D2 D3 D4 D5 /T/ C7
+                	o_data[7:0]   = BLOCK_TYPE_TERM_6;
+                	o_data[55:8]  = i_data[47:0];
+                	o_data[62:56] = CTRL_IDLE;
+                end
+
+                8'b1000_0000: 
+		begin
+                	// terminate in lane 7: D0 D1 D2 D3 D4 D5 D6 /T/
+                	o_data[7:0]   = BLOCK_TYPE_TERM_7;
+                	o_data[63:8]  = i_data[55:0];
+                end
+
+                default: 
+		begin
+                	// fallback to idle block
+                	o_data[7:0]  = BLOCK_TYPE_CTRL;
+                	o_data[63:8] = {8{CTRL_IDLE}};
+                end
+
+            endcase
+        end
+    end
 
 endmodule
