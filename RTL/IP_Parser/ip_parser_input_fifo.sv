@@ -1,11 +1,11 @@
 `timescale 1ns / 1ps
 
 module fifo # (
-    parameter DEPTH = 512;              // Max num of words
-    parameter ADDRW = $clog2(DEPTH);    // Num of bits needed
+    parameter DEPTH = 512,                      // Max num of words
+    parameter ADDRW = $clog2(DEPTH)             // Num of bits needed
 )(
-    input   logic           clk;
-    input   logic           rst_n;
+    input   logic           clk,
+    input   logic           rst_n,
 
     // Write Interface (From the Frame Parser)
     input   logic [63:0]    s_axis_tdata,       // 8 bytes of packet data per clock cycle, starting at byte 0 of the IP header. Big-endian, matching wire order.
@@ -21,7 +21,7 @@ module fifo # (
     output  logic           m_axis_tvalid,
     input   logic           m_axis_tready,
     output  logic           m_axis_tlast,
-    output  logic [0:0]     m_axis_tuser,
+    output  logic [0:0]     m_axis_tuser
 );
 
 // Internal Signal Packing
@@ -39,18 +39,38 @@ logic [ADDRW:0] occupancy;
 
 // Handshaking and Backpressure Logic
 logic full, empty, push, pop;
+logic read_en, valid_r;
 
 assign push = s_axis_tvalid && s_axis_tready;
 assign pop  = m_axis_tvalid && m_axis_tready;
 
-assign s_axis_tready = ~full;
-assign m_axis_tvalid = ~empty;
-
 assign full  = (occupancy == DEPTH);
 assign empty = (occupancy == 0);
 
-// First-Word Fall-Through
-assign read_word = mem[rd_ptr];
+// First-Word Fall-Through (Using BRAM)
+assign read_en = ~empty && (~valid_r || pop);
+
+// tready goes high if fifo isn't full, or if we are making room by fetching from BRAM this cycle
+assign s_axis_tready = ~full || read_en;
+assign m_axis_tvalid = valid_r;
+
+always_ff @(posedge clk) begin
+    if (push) begin
+        mem[wr_ptr] <= write_word;
+    end
+    if (read_en) begin
+        if (push && (wr_ptr == rd_ptr)) begin
+            // COLLISION CASE: Writing and reading the same address.
+            // Because of Non-Blocking Assignment (<=) rules in simulation, 
+            // mem[rd_ptr] is sampled BEFORE the 'push' write actually commits.
+            // This forces the simulator to read the OLD data.
+            read_word <= mem[rd_ptr];
+        end else begin
+            // NORMAL CASE: Reading a different address.
+            read_word <= mem[rd_ptr];
+        end
+    end
+end
 
 // Synchronous Block (Made from DFFs)
 always_ff @(posedge clk or negedge rst_n) begin
@@ -59,23 +79,24 @@ always_ff @(posedge clk or negedge rst_n) begin
         rd_ptr      <= 'd0;
         wr_ptr      <= 'd0;
         occupancy   <= 'd0;
+        valid_r     <= 1'b0;
     end else begin
-        // Push & Pop simultaneously (Occupancy doesn't change here)
-        if (push && pop) begin
-            mem[wr_ptr] <= write_word;
-            wr_ptr      <= wr_ptr + 1;
-            rd_ptr      <= rd_ptr + 1;
-        end
+        // Output validity tracking
+        if (read_en)      valid_r <= 1'b1;
+        else if (pop)     valid_r <= 1'b0;
 
+        // Push & BRAM Read simultaneously (Occupancy doesn't change here)
+        if (push && read_en) begin
+            wr_ptr <= wr_ptr + 1;
+            rd_ptr <= rd_ptr + 1;
+        end
         // Push only
-        else if (push && ~full) begin
-            mem[wr_ptr] <= write_word;
+        else if (push) begin
             wr_ptr      <= wr_ptr + 1;
             occupancy   <= occupancy + 1;
         end
-
-        // Pull only
-        else if (pop && ~empty) begin
+        // BRAM Read only
+        else if (read_en) begin
             rd_ptr      <= rd_ptr + 1;
             occupancy   <= occupancy - 1;
         end
