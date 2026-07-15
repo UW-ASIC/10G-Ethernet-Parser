@@ -57,38 +57,37 @@ module gearbox_rx #(
     // *: o_head is the bottom 2 bits of the barrel shifter output, sent out to block_sync for alignment correction. 
 
     logic [(DATA_W + DATA_W - 1): 0] buffer;
+    logic [65:0] window;
     logic [5:0] count;
-    logic [5:0] saved_count;
-    logic [63:0] payload;
+    logic [63:0] data_prev;
     logic underflow;
-
-
-    assign o_valid = i_pma_lock && (count != 6'd0) && (count != 6'd1) && (i_slip && (count != 6'd2)) && (!underflow);
 
     assign o_data = {payload, o_head};
 
     always @(posedge clk) begin
-        buffer <= {buffer[63:0], i_data};
-        if (!i_pma_lock)
-            count <= 6'd63;
+        data_prev <= i_data;
+    end
+
+    assign buffer = {data_prev, i_data};
+
+    always @(posedge clk) begin
+        if (!i_pma_lock) begin
+            count <= 6'b0;
+        end
         else begin
-            if (underflow) begin
-                payload <= buffer[(7'd127 -{1'b0, saved_count}) -: 64];
-                underflow <= 1'b0;
-            end
-            if (!o_valid) begin
-                o_head <= buffer[({1'b0, count} + 7'd64)-:2];
-                count <= (i_slip)? (count - 6'd3):(count - 6'd2);
-                saved_count <= count;
-                underflow <= 1'b1;
-            end
-            else begin
-                count <= (i_slip)? (count - 6'd3):(count - 6'd2);
-                payload <= buffer[({1'b0, count} + 7'd64 - HEAD_W[6:0])-:64]; //count is concatenated so that adding 7'd64 does not overflow
-                o_head <= buffer[({1'b0, count} + 7'd64)-:2];
-            end
+            count <= (i_slip) ? (count - 6'd3) : (count - 6'd2);
         end
     end
+
+    assign window = buffer[({1'b0,count} + 7'd64)-:66];
+
+
+    assign window  = buffer[({1'b0, count} + 7'd64) -: BLOCK_W];
+    assign o_head  = window[BLOCK_W - 1 -: HEAD_W];
+    assign payload = window[DATA_W - 1 : 0];  
+    assign o_data  = {payload, o_head};
+
+    assign o_valid = i_pma_lock && (count != 6'd0) && !(i_slip && (count == 6'd1));  
 
 endmodule
 
