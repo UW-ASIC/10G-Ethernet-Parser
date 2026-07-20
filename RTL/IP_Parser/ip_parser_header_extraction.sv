@@ -15,7 +15,22 @@ module ip_parser_header_extraction (
     input   logic [0:0]  m_axis_tuser,
 
     // pulses high the cycle dst_ip lands, tells next guy the fields are ready
-    output  logic        capture_done
+    output  logic        capture_done,
+
+    // pulses if tlast shows up before we got the full header (runt packet) -
+    // whatever we captured is stale/partial, next guy should just drop it
+    output  logic        header_incomplete,
+
+    // the actual captured fields, handed off to the metadata/drop block
+    output  logic [3:0]  version,
+    output  logic [3:0]  ihl,
+    output  logic [5:0]  dscp,
+    output  logic [1:0]  ecn,
+    output  logic [15:0] total_len,
+    output  logic [7:0]  ttl,
+    output  logic [7:0]  protocol,
+    output  logic [31:0] src_ip,
+    output  logic [31:0] dst_ip
 );
 
 assign m_axis_tready = 1'b1; // dis is a placeholder
@@ -29,25 +44,14 @@ assign beat_valid = m_axis_tvalid && m_axis_tready;
 // anything after dst_ip is payload not header anymore
 logic [1:0] beat_cnt;
 
-// beat 0 fields, top half of the ip header. bit slices from the header
-// extraction task doc, dont ask me why theyre numbered backwards its
-// network byte order lol
-logic [3:0]  version;
-logic [3:0]  ihl;
-logic [5:0]  dscp;
-logic [1:0]  ecn;
-logic [15:0] total_len;
-
-// beat 1 fields, ttl/protocol are top of the word, src_ip is the low 32 bits
-logic [7:0]  ttl;
-logic [7:0]  protocol;
-logic [31:0] src_ip;
-
-// beat 2, just dst_ip, top half of the word (bottom half is payload already)
-logic [31:0] dst_ip;
+// beat 0/1/2 fields are all module outputs now (see port list above) 
 
 // same condition that triggers the dst_ip grab below, just exposed as a pulse
 assign capture_done = beat_valid && (beat_cnt == 2'd2);
+
+// tlast landed while we were still on beat 0 or 1 -> dst_ip (and maybe more)
+// never got captured this packet, registers still hold leftovers from before
+assign header_incomplete = beat_valid && m_axis_tlast && (beat_cnt < 2'd2);
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
