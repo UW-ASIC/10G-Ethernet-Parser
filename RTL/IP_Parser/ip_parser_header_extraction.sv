@@ -12,7 +12,10 @@ module ip_parser_header_extraction (
     input   logic       m_axis_tvalid,
     output  logic        m_axis_tready,
     input   logic        m_axis_tlast,
-    input   logic [0:0]  m_axis_tuser
+    input   logic [0:0]  m_axis_tuser,
+
+    // pulses high the cycle dst_ip lands, tells next guy the fields are ready
+    output  logic        capture_done
 );
 
 assign m_axis_tready = 1'b1; // dis is a placeholder
@@ -42,6 +45,9 @@ logic [31:0] src_ip;
 
 // beat 2, just dst_ip, top half of the word (bottom half is payload already)
 logic [31:0] dst_ip;
+
+// same condition that triggers the dst_ip grab below, just exposed as a pulse
+assign capture_done = beat_valid && (beat_cnt == 2'd2);
 
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
