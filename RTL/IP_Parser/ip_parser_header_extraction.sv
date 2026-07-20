@@ -35,6 +35,11 @@ logic [5:0]  dscp;
 logic [1:0]  ecn;
 logic [15:0] total_len;
 
+// beat 1 fields, ttl/protocol are top of the word, src_ip is the low 32 bits
+logic [7:0]  ttl;
+logic [7:0]  protocol;
+logic [31:0] src_ip;
+
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         beat_cnt <= 2'd0;
@@ -46,6 +51,11 @@ always_ff @(posedge clk or negedge rst_n) begin
             dscp      <= m_axis_tdata[55:50];
             ecn       <= m_axis_tdata[49:48];
             total_len <= m_axis_tdata[47:32];
+        end else if (beat_cnt == 2'd1) begin
+            // beat 1 -> ttl, protocol, and the whole src_ip lands here
+            ttl      <= m_axis_tdata[63:56];
+            protocol <= m_axis_tdata[55:48];
+            src_ip   <= m_axis_tdata[31:0];
         end
 
         if (m_axis_tlast)
