@@ -22,7 +22,7 @@ assign m_axis_tready = 1'b1; // dis is a placeholder
 logic beat_valid;
 assign beat_valid = m_axis_tvalid && m_axis_tready;
 
-// which header beat we're capturing, 0/1/2. stays at 2 once we hit it since
+// which header beat we're capturing, 0/1/2, then it sits at 3 ("done") since
 // anything after dst_ip is payload not header anymore
 logic [1:0] beat_cnt;
 
@@ -40,6 +40,9 @@ logic [7:0]  ttl;
 logic [7:0]  protocol;
 logic [31:0] src_ip;
 
+// beat 2, just dst_ip, top half of the word (bottom half is payload already)
+logic [31:0] dst_ip;
+
 always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
         beat_cnt <= 2'd0;
@@ -56,11 +59,15 @@ always_ff @(posedge clk or negedge rst_n) begin
             ttl      <= m_axis_tdata[63:56];
             protocol <= m_axis_tdata[55:48];
             src_ip   <= m_axis_tdata[31:0];
+        end else if (beat_cnt == 2'd2) begin
+            // beat 2 -> dst_ip, and only this beat, else payload bytes would
+            // keep stomping on it every cycle after
+            dst_ip <= m_axis_tdata[63:32];
         end
 
         if (m_axis_tlast)
             beat_cnt <= 2'd0;
-        else if (beat_cnt != 2'd2)
+        else if (beat_cnt != 2'd3)
             beat_cnt <= beat_cnt + 2'd1;
     end
 end
