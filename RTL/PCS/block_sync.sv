@@ -22,8 +22,7 @@ module block_sync_rx #(
     output logic                    o_lock    // alignment found and confirmed
 );
 
-    // this module acts as a simple state machine, taking sync headers from the
-    // gearbox and evaluating alignment accuracy.
+    // this module acts as a simple state machine, taking sync headers from the gearbox and evaluating alignment accuracy.
     
     /* once serdes data is valid (i_signal_ok from serdes) and gearbox has valid headers to share 
         (i_valid from gearbox_rx), start checking headers and counting:
