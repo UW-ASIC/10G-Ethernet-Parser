@@ -4,7 +4,8 @@
 module encoder #(
 
     parameter DATA_W = 64
-)(
+)
+(
     input  logic          clk,
     input  logic        rst_n,
 
@@ -19,8 +20,8 @@ module encoder #(
     input  logic                      i_error,       // error indication
 
     // output to scrambler
-    output logic                      o_valid,
-    output logic [DATA_W + 1 : 0]      o_data         // 64 bit encoded payload + 2 bit sync header: sent to scrambler
+    output logic               o_valid,
+    output logic [65 : 0]      o_data         // 64 bit encoded payload + 2 bit sync header: sent to scrambler
 );
 
   
@@ -84,7 +85,7 @@ module encoder #(
     	always_comb 
 	begin
         	o_valid  = i_valid;
-        	o_data   = '0;
+        	o_data   = '0; //no latches inferred
         	term_pos = i_keep + 8'd1;
 
         	// default: idle control block
@@ -92,7 +93,12 @@ module encoder #(
         	o_data[7:0]   = BLOCK_TYPE_CTRL;
         	o_data[63:8]  = {8{CTRL_IDLE}};
 
-        if (i_ctrl == 8'h00) 
+	if (i_error) 
+	begin
+		// if known to be error, emit a don't care
+        	o_data = 'x;
+    	end
+        else if (i_ctrl == 8'h00) 
 	begin
         	// pure data block
         	o_data[65:64] = 2'b01;
@@ -124,8 +130,8 @@ module encoder #(
                 8'b0000_0001: 
 		begin
                 	// terminate in lane 0: /T/ C1 C2 C3 C4 C5 C6 C7
-                	o_data[7:0]   = BLOCK_TYPE_TERM_0;
-                	o_data[56:8]  = {7{CTRL_IDLE}};
+                	o_data[7:0]   = BLOCK_TYPE_TERM_0;	
+                	o_data[63:15]  = {7{CTRL_IDLE}};
                 end
 
                 8'b0000_0010: 
@@ -133,7 +139,7 @@ module encoder #(
                 	// terminate in lane 1: D0 /T/ C2 C3 C4 C5 C6 C7
                 	o_data[7:0]   = BLOCK_TYPE_TERM_1;
                 	o_data[15:8]  = i_data[7:0];
-                	o_data[57:16] = {6{CTRL_IDLE}};
+                	o_data[63:22] = {6{CTRL_IDLE}};
                 end
 
                 8'b0000_0100: 
@@ -141,7 +147,7 @@ module encoder #(
                 	// terminate in lane 2: D0 D1 /T/ C3 C4 C5 C6 C7
                 	o_data[7:0]   = BLOCK_TYPE_TERM_2;
                  	o_data[23:8]  = i_data[15:0];
-                	o_data[58:24] = {5{CTRL_IDLE}};
+                	o_data[63:29] = {5{CTRL_IDLE}};
                 end
 
                 8'b0000_1000: 
@@ -149,7 +155,7 @@ module encoder #(
                 	// terminate in lane 3: D0 D1 D2 /T/ C4 C5 C6 C7
                 	o_data[7:0]   = BLOCK_TYPE_TERM_3;
                 	o_data[31:8]  = i_data[23:0];
-                	o_data[59:32] = {4{CTRL_IDLE}};
+                	o_data[63:36] = {4{CTRL_IDLE}};
                 end
 
                 8'b0001_0000: 
@@ -157,7 +163,7 @@ module encoder #(
                 	// terminate in lane 4: D0 D1 D2 D3 /T/ C5 C6 C7
                 	o_data[7:0]   = BLOCK_TYPE_TERM_4;
                  	o_data[39:8]  = i_data[31:0];
-                	o_data[60:40] = {3{CTRL_IDLE}};
+                	o_data[63:43] = {3{CTRL_IDLE}};
                 end
 
                 8'b0010_0000: 
@@ -165,7 +171,7 @@ module encoder #(
                 	// terminate in lane 5: D0 D1 D2 D3 D4 /T/ C6 C7
                    	o_data[7:0]   = BLOCK_TYPE_TERM_5;
                 	o_data[47:8]  = i_data[39:0];
-                	o_data[61:48] = {2{CTRL_IDLE}};
+                	o_data[63:50] = {2{CTRL_IDLE}};
                 end
 
                 8'b0100_0000: 
@@ -173,7 +179,7 @@ module encoder #(
                 	// terminate in lane 6: D0 D1 D2 D3 D4 D5 /T/ C7
                 	o_data[7:0]   = BLOCK_TYPE_TERM_6;
                 	o_data[55:8]  = i_data[47:0];
-                	o_data[62:56] = CTRL_IDLE;
+                	o_data[63:57] = CTRL_IDLE;
                 end
 
                 8'b1000_0000: 
@@ -185,9 +191,8 @@ module encoder #(
 
                 default: 
 		begin
-                	// fallback to idle block
-                	o_data[7:0]  = BLOCK_TYPE_CTRL;
-                	o_data[63:8] = {8{CTRL_IDLE}};
+			// if not a vaild signal, emit a don't care
+                	o_data = 'x;
                 end
 
             endcase
