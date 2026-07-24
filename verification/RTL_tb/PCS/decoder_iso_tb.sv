@@ -73,46 +73,23 @@ module decoder_iso_tb;
     //    by feeding known bit patterns directly, you isolate decoder behavior from
     //    any encoder issues.
     // --------------------------------------------------------------------------
-
-    // test 1: data block
-    //   sync = 01, payload = 8 known bytes. verify o_data matches payload,
-    //   o_ctrl = 8'h00, o_keep = 8'hFF, no flags set, no error.
-
-    // test 2: idle block
-    //   sync = 10, block type = 0x1E, all control codes = 7'h00 (idle).
-    //   verify o_data = 64'h0707070707070707, o_ctrl = 8'hFF, o_idle = 1.
-
-    // test 3: start block (type 0x78)
-    //   sync = 10, block type = 0x78, 7 data bytes in the payload.
-    //   verify o_data[7:0] = 0xFB (start char), o_data[63:8] = your 7 bytes,
-    //   o_ctrl = 8'h01, o_start = 1.
-
-    // test 4: all terminate types
-    //   for each TERM_0 through TERM_7: construct the block manually.
-    //   verify: correct o_data (data bytes + 0xFD at the right position + idle padding),
-    //   correct o_ctrl, correct o_keep, o_terminate = 1.
-    //   *: pay close attention to o_keep. TERM_0 should have o_keep = 8'h00,
-    //      TERM_7 should have o_keep = 8'h7F. if yours include the terminate
-    //      byte in the keep mask, that's a bug.
-
-    // test 5: invalid sync header
-    //   sync = 00 and sync = 11.
-    //   verify o_error =1 for both.
-
-    // test 6: unrecognized block type
-    //   sync = 10, block type = something not in the table (e.g. 0xAB).
-    //   verify o_error =1.
-
-    // test 7: bad control code in a valid block type
-    //   sync = 10, block type = 0x1E (all control), but put an invalid 7-bit
-    //   code in one of the control slots (e.g. 7'h7F).
-    //   verify o_error =1 because decode_control_code returns 0xFE.
-
-    // test 8: ordered set blocks
-    //   types 0x2D, 0x4B, 0x55, 0x66.
-    //   construct with valid O-codes (4'h0 = Q, 4'hF = Fsig).
-    //   verify correct o_data placement and o_ctrl flags.
-    //   *: also test with an invalid O-code (e.g. 4'h5) —> should trigger o_error.
+    task automatic check_output(input string name, input logic exp_valid, input logic [DATA_W - 1 : 0] exp_data, 
+                                input logic [7:0] exp_ctrl, input logic [7:0] exp_keep, input logic exp_start, 
+                                input logic exp_idle, input logic exp_terminate, input logic exp_error); 
+        if (o_valid !== exp_valid || o_data !== exp_data || o_ctrl !== exp_ctrl || o_keep !== exp_keep || 
+            o_start !== exp_start || o_idle !== exp_idle || o_terminate !== exp_terminate || o_error !== exp_error) begin
+            $display("FAIL: %s", name); 
+            $display("  Expected: valid=%b, data=%h, ctrl=%h, keep=%h, start=%b, idle=%b, terminate=%b, error=%b",
+                     exp_valid, exp_data, exp_ctrl, exp_keep, exp_start, exp_idle, exp_terminate, exp_error);
+            $display("  Observed: valid=%b, data=%h, ctrl=%h, keep=%h, start=%b, idle=%b, terminate=%b, error=%b",
+                     o_valid, o_data, o_ctrl, o_keep, o_start, o_idle, o_terminate, o_error);
+            fail_count++; 
+        end 
+        else begin
+            $display("PASS: %s", name); 
+            pass_count++; 
+        end
+    endtask 
 
     initial begin
         $display("==============================================");
@@ -123,7 +100,51 @@ module decoder_iso_tb;
 
         do_reset();
 
-        // implement tests here
+        // test 1: data block
+        //   sync = 01, payload = 8 known bytes. verify o_data matches payload,
+        //   o_ctrl = 8'h00, o_keep = 8'hFF, no flags set, no error.
+        i_data = 1'b1; 
+        i_data = make_block(2'b01, 64'h0102030405060708);
+        check_outputs(.test_name ("TEST 1: Data Block"),
+                      .exp_valid (1'b1), .exp_data (64'h0102030405060708),
+                      .exp_ctrl (8'h00), .exp_keep (8'hFF), .exp_start (1'b0),
+                      .exp_idle (1'b0), .exp_terminate (1'b0), .exp_error (1'b0));
+
+        // test 2: idle block
+        //   sync = 10, block type = 0x1E, all control codes = 7'h00 (idle).
+        //   verify o_data = 64'h0707070707070707, o_ctrl = 8'hFF, o_idle = 1.
+
+        // test 3: start block (type 0x78)
+        //   sync = 10, block type = 0x78, 7 data bytes in the payload.
+        //   verify o_data[7:0] = 0xFB (start char), o_data[63:8] = your 7 bytes,
+        //   o_ctrl = 8'h01, o_start = 1.
+
+        // test 4: all terminate types
+        //   for each TERM_0 through TERM_7: construct the block manually.
+        //   verify: correct o_data (data bytes + 0xFD at the right position + idle padding),
+        //   correct o_ctrl, correct o_keep, o_terminate = 1.
+        //   *: pay close attention to o_keep. TERM_0 should have o_keep = 8'h00,
+        //      TERM_7 should have o_keep = 8'h7F. if yours include the terminate
+        //      byte in the keep mask, that's a bug.
+
+        // test 5: invalid sync header
+        //   sync = 00 and sync = 11.
+        //   verify o_error =1 for both.
+
+        // test 6: unrecognized block type
+        //   sync = 10, block type = something not in the table (e.g. 0xAB).
+        //   verify o_error =1.
+
+        // test 7: bad control code in a valid block type
+        //   sync = 10, block type = 0x1E (all control), but put an invalid 7-bit
+        //   code in one of the control slots (e.g. 7'h7F).
+        //   verify o_error =1 because decode_control_code returns 0xFE.
+
+        // test 8: ordered set blocks
+        //   types 0x2D, 0x4B, 0x55, 0x66.
+        //   construct with valid O-codes (4'h0 = Q, 4'hF = Fsig).
+        //   verify correct o_data placement and o_ctrl flags.
+        //   *: also test with an invalid O-code (e.g. 4'h5) —> should trigger o_error.
 
         $display("\n==============================================");
         $display("  Results: %0d PASSED, %0d FAILED", pass_count, fail_count);
