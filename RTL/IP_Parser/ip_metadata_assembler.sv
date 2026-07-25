@@ -48,13 +48,6 @@ module ip_metadata_assembler (
     logic beat_fire;
     assign beat_fire = tvalid && tready;
 
-   
-    logic capture_done_d;
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) capture_done_d <= 1'b0;
-        else        capture_done_d <= capture_done;
-    end
-
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             src_ip_r            <= 32'd0;
@@ -77,7 +70,11 @@ module ip_metadata_assembler (
             assembly_incomplete <= 1'b0;
 
             
-            if (beat_fire && capture_done) begin
+            // capture_done is already registered on the extractor side to land
+            // on the same cycle dst_ip is actually valid, so it's safe to grab
+            // everything (including dst_ip) off one pulse - no beat_fire gating
+            // needed here, capture_done was already qualified by it upstream
+            if (capture_done) begin
                 total_len_r <= total_len;
                 protocol_r  <= protocol;
                 ttl_r       <= ttl;
@@ -85,10 +82,6 @@ module ip_metadata_assembler (
                 ecn_r       <= ecn;
                 ihl_r       <= ihl;
                 src_ip_r    <= src_ip;
-            end
-
-            
-            if (capture_done_d) begin
                 dst_ip_r    <= dst_ip;
                 have_fields <= 1'b1;
             end
