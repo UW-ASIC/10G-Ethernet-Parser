@@ -1,6 +1,4 @@
 
-`default_nettype none
-
 module gearbox_rx #(
 
     parameter DATA_W = 64,
