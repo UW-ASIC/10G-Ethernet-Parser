@@ -107,21 +107,32 @@ module decoder_iso_tb;
         //   sync = 01, payload = 8 known bytes. verify o_data matches payload,
         //   o_ctrl = 8'h00, o_keep = 8'hFF, no flags set, no error.
         i_valid = 1'b1;
-        i_data = 1'b1; 
         i_data = make_block(2'b01, 64'h0102030405060708);
         check_output(.name ("TEST 1: Data Block"),
-                      .exp_valid (1'b1), .exp_data (64'h0102030405060708),
-                      .exp_ctrl (8'h00), .exp_keep (8'hFF), .exp_start (1'b0),
-                      .exp_idle (1'b0), .exp_terminate (1'b0), .exp_error (1'b0));
+                     .exp_valid (1'b1), .exp_data (64'h0102030405060708),
+                     .exp_ctrl (8'h00), .exp_keep (8'hFF), .exp_start (1'b0),
+                     .exp_idle (1'b0), .exp_terminate (1'b0), .exp_error (1'b0));
 
         // test 2: idle block
         //   sync = 10, block type = 0x1E, all control codes = 7'h00 (idle).
         //   verify o_data = 64'h0707070707070707, o_ctrl = 8'hFF, o_idle = 1.
+        i_valid = 1'b1;
+        i_data = make_block(2'b10, 64'h000000000000001E);
+        check_output(.name ("TEST 2: Idle Block"),
+                     .exp_valid (1'b1), .exp_data (64'h0707070707070707),
+                     .exp_ctrl (8'hFF), .exp_keep (8'hFF), .exp_start (1'b0),
+                     .exp_idle (1'b1), .exp_terminate (1'b0), .exp_error (1'b0));
 
         // test 3: start block (type 0x78)
         //   sync = 10, block type = 0x78, 7 data bytes in the payload.
         //   verify o_data[7:0] = 0xFB (start char), o_data[63:8] = your 7 bytes,
         //   o_ctrl = 8'h01, o_start = 1.
+        i_valid = 1'b1;
+        i_data = make_block(2'b10, 64'h7766554433221178);
+        check_output(.name ("TEST 3: Start Block"),
+                     .exp_valid (1'b1), .exp_data (64'h77665544332211FB),
+                     .exp_ctrl (8'h01), .exp_keep (8'hFF), .exp_start (1'b1),
+                     .exp_idle (1'b0), .exp_terminate (1'b0), .exp_error (1'b0));
 
         // test 4: all terminate types
         //   for each TERM_0 through TERM_7: construct the block manually.
@@ -130,7 +141,65 @@ module decoder_iso_tb;
         //   *: pay close attention to o_keep. TERM_0 should have o_keep = 8'h00,
         //      TERM_7 should have o_keep = 8'h7F. if yours include the terminate
         //      byte in the keep mask, that's a bug.
+        i_valid = 1'b1; 
 
+        
+        // 4a: TERM_0 (0x87) - 0 data, 7 idles
+        i_data  = make_block(2'b10, 64'h0000000000000087);
+        check_output(.name ("TEST 4a: TERM_0 (0x87)"),
+                     .exp_valid (1'b1), .exp_data (64'h07070707070707FD),
+                     .exp_ctrl (8'hFF), .exp_keep (8'h00), .exp_start (1'b0),
+                     .exp_idle (1'b0), .exp_terminate (1'b1), .exp_error (1'b0));
+
+        // 4b: TERM_1 (0x99) - 1 data, 6 idles
+        i_data  = make_block(2'b10, 64'h0000000000001199);
+        check_output(.name ("TEST 4b: TERM_1 (0x99)"),
+                     .exp_valid (1'b1), .exp_data (64'h070707070707FD11),
+                     .exp_ctrl (8'hFE), .exp_keep (8'h01), .exp_start (1'b0),
+                     .exp_idle (1'b0), .exp_terminate (1'b1), .exp_error (1'b0));
+
+        // 4c: TERM_2 (0xAA) - 2 data, 5 idles
+        i_data  = make_block(2'b10, 64'h00000000002211AA);
+        check_output(.name ("TEST 4c: TERM_2 (0xAA)"),
+                     .exp_valid (1'b1), .exp_data (64'h0707070707FD2211),
+                     .exp_ctrl (8'hFC), .exp_keep (8'h03), .exp_start (1'b0),
+                     .exp_idle (1'b0), .exp_terminate (1'b1), .exp_error (1'b0));
+
+        // 4d: TERM_3 (0xB4) - 3 data, 4 idles
+        i_data  = make_block(2'b10, 64'h00000000332211B4);
+        check_output(.name ("TEST 4d: TERM_3 (0xB4)"),
+                     .exp_valid (1'b1), .exp_data (64'h07070707FD332211),
+                     .exp_ctrl (8'hF8), .exp_keep (8'h07), .exp_start (1'b0),
+                     .exp_idle (1'b0), .exp_terminate (1'b1), .exp_error (1'b0));
+
+        // 4e: TERM_4 (0xCC) - 4 data, 3 idles
+        i_data  = make_block(2'b10, 64'h00000044332211CC);
+        check_output(.name ("TEST 4e: TERM_4 (0xCC)"),
+                     .exp_valid (1'b1), .exp_data (64'h070707FD44332211),
+                     .exp_ctrl (8'hF0), .exp_keep (8'h0F), .exp_start (1'b0),
+                     .exp_idle (1'b0), .exp_terminate (1'b1), .exp_error (1'b0));
+
+        // 4f: TERM_5 (0xD2) - 5 data, 2 idles
+        i_data  = make_block(2'b10, 64'h00005544332211D2);
+        check_output(.name ("TEST 4f: TERM_5 (0xD2)"),
+                     .exp_valid (1'b1), .exp_data (64'h0707FD5544332211),
+                     .exp_ctrl (8'hE0), .exp_keep (8'h1F), .exp_start (1'b0),
+                     .exp_idle (1'b0), .exp_terminate (1'b1), .exp_error (1'b0));
+
+        // 4g: TERM_6 (0xE1) - 6 data, 1 idle
+        i_data  = make_block(2'b10, 64'h00665544332211E1);
+        check_output(.name ("TEST 4g: TERM_6 (0xE1)"),
+                     .exp_valid (1'b1), .exp_data (64'h07FD665544332211),
+                     .exp_ctrl (8'hC0), .exp_keep (8'h3F), .exp_start (1'b0),
+                     .exp_idle (1'b0), .exp_terminate (1'b1), .exp_error (1'b0));
+
+        // 4h: TERM_7 (0xFF) - 7 data, 0 idles
+        i_data  = make_block(2'b10, 64'h77665544332211FF);
+        check_output(.name ("TEST 4h: TERM_7 (0xFF)"),
+                     .exp_valid (1'b1), .exp_data (64'hFD77665544332211),
+                     .exp_ctrl (8'h80), .exp_keep (8'h7F), .exp_start (1'b0),
+                     .exp_idle (1'b0), .exp_terminate (1'b1), .exp_error (1'b0));
+        
         // test 5: invalid sync header
         //   sync = 00 and sync = 11.
         //   verify o_error =1 for both.
