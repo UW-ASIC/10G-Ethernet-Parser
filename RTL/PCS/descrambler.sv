@@ -36,11 +36,50 @@ module descrambler #(
     // - bits 58 to 63:  both taps land in current input
     //   OUT[i] = data[i] XOR data[i-39] XOR data[i-58]
 
+    logic [57:0] state; //stores the last 58 bits, 0 being most recent.
+    logic [DATA_W-1:0] descrambled; //descrambled data
+    logic [DATA_W+1:0] total_descram; //descrambled data + header
+    always_comb begin
+        //for bits 0 to 38
+        for(int i = 0; i<= 38; i++) begin
+            descrambled[i] = i_scram_data[i] 
+            ^state[38-i] 
+            ^state[57-i]; 
+        end
+        //for bits 39 to 57
+        for(int i = 39; i<=57; i++) begin
+            descrambled[i] = i_scram_data[i]
+            ^i_scram_data[i-39] //
+            ^state[57-i];
+        end
+        //for bits 58 to 63
+        for(int i = 58; i <= 63; i++) begin
+            descrambled[i] = i_scram_data[i]
+            ^i_scram_data[i-39]
+            ^i_scram_data[i-58];
+        end
+    end
+    // *: update state with state_next on each valid cycle
+    always @(posedge clk) begin
+        //if(!rst_n)
+        if(!rst_n) begin
+            state <= '1; 
+            o_valid <= 0;
+            total_descram<= 0;
+        end else begin
+            o_valid <= i_valid;
+             if(i_valid) begin
+                //Store state (current input scram) in reverse order
+                for(int i = 0; i< 58; i++) begin
+                    state[i] <= i_scram_data[63-i];
+                end
+                //Header + descrambled
+                total_descram <= {i_scram_data[65:64], descrambled};
+            end
+        end
 
-    logic [57:0] state, state_next;
-    // implement the parallel XOR equations (3 ranges for x <= I1,  I1 < x <= I0, I0 < x, as described above)
-
-    // *: update state_q with state_next on each valid cycle
-    // *: pass sync_header through unchanged
+        
+    end
+    assign o_descram_data = total_descram;
  
 endmodule
