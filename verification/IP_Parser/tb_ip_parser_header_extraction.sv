@@ -78,6 +78,12 @@ module tb_ip_parser_header_extraction;
     localparam [63:0] BEAT1_B = {8'd128, 8'd6, 16'hCAFE, EXP2_SRC_IP};
     localparam [63:0] BEAT2_B = {EXP2_DST_IP, 32'h0000_0000};
 
+    // dummy payload beats for the "packet continues past the header" scenario
+    // - just needs to look nothing like header data so a stomped dst_ip is obvious
+    localparam [63:0] PAYLOAD_A = 64'hAAAA_AAAA_AAAA_AAAA;
+    localparam [63:0] PAYLOAD_B = 64'h5555_5555_5555_5555;
+    localparam [63:0] PAYLOAD_C = 64'h1234_5678_9ABC_DEF0;
+
     int errors = 0;
 
     task automatic check(logic cond, string msg);
@@ -174,6 +180,60 @@ module tb_ip_parser_header_extraction;
         check(capture_done == 1'b1, "capture_done pulses for the second packet too");
         check(src_ip == EXP2_SRC_IP, "src_ip updated for the second packet");
         check(dst_ip == EXP2_DST_IP, "dst_ip updated for the second packet");
+
+        // =====================================================================
+        // SCENARIO 4: packet keeps going past the header - beat_cnt saturates
+        // at 3, so payload beats must not re-fire capture_done or stomp dst_ip
+        // (this is what the empty `default:` case in the RTL exists to protect)
+        // =====================================================================
+        $display("\n[TB] === SCENARIO 4: Payload beats after the header ===");
+        send_beat(BEAT0, 1'b0);
+        send_beat(BEAT1, 1'b0);
+        send_beat(BEAT2, 1'b0); // header complete, but no tlast - packet keeps going
+        check(capture_done == 1'b1, "capture_done still pulses even when the packet continues past the header");
+        check(dst_ip == EXP_DST_IP, "dst_ip captured correctly with payload still to come");
+        send_beat(PAYLOAD_A, 1'b0);
+        check(capture_done == 1'b0, "capture_done doesn't re-fire for a payload beat");
+        check(dst_ip == EXP_DST_IP, "dst_ip untouched by payload data landing in the same byte lanes");
+        send_beat(PAYLOAD_B, 1'b0);
+        check(dst_ip == EXP_DST_IP, "dst_ip still holds after a second payload beat");
+        send_beat(PAYLOAD_C, 1'b1); // finally end the packet
+        check(capture_done == 1'b0, "capture_done doesn't fire on the payload beat that carries tlast");
+        // prove beat_cnt actually reset (not just stuck at 3) by capturing a
+        // fresh, different header right after this long packet
+        send_beat(BEAT0_B, 1'b0);
+        send_beat(BEAT1_B, 1'b0);
+        send_beat(BEAT2_B, 1'b1);
+        check(capture_done == 1'b1, "capture_done fires normally for the next packet after a long one");
+        check(dst_ip == EXP2_DST_IP, "beat_cnt reset cleanly after the multi-beat payload packet");
+
+        // =====================================================================
+        // SCENARIO 5: pathological short packet - tlast on beat 0 itself
+        // =====================================================================
+        $display("\n[TB] === SCENARIO 5: tlast on beat 0 ===");
+        drive_beat(BEAT0, 1'b1);
+        #1;
+        check(header_incomplete == 1'b1, "header_incomplete asserted when tlast lands on beat 0");
+        @(posedge clk);
+        check(capture_done == 1'b0, "capture_done never fires when tlast lands on beat 0");
+        idle_beat();
+
+        // =====================================================================
+        // SCENARIO 6: upstream bubble mid-packet - tvalid drops between beats
+        // (not backpressure, tready is hardwired high - this is upstream just
+        // not having data ready). beat_cnt must only move on beat_valid.
+        // =====================================================================
+        $display("\n[TB] === SCENARIO 6: Bubble mid-packet ===");
+        send_beat(BEAT0, 1'b0);
+        idle_beat(); // upstream stalls
+        idle_beat(); // hold it a couple cycles to be sure
+        check(capture_done == 1'b0, "nothing captured while stalled");
+        send_beat(BEAT1, 1'b0); // stall lifts, beat 1 goes through
+        check(capture_done == 1'b0, "capture_done still hasn't fired - dst_ip beat hasn't happened yet");
+        send_beat(BEAT2, 1'b1);
+        check(capture_done == 1'b1, "capture_done fires correctly after resuming from the stall");
+        check(dst_ip == EXP_DST_IP, "dst_ip correct despite the mid-packet bubble");
+        check(ttl    == EXP_TTL,    "ttl captured correctly after the stall (not lost or double-captured)");
 
         idle_beat();
         if (errors == 0) $display("\n[TB] ALL CHECKS PASSED");
