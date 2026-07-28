@@ -1,6 +1,6 @@
 `timescale 1ns / 1ps
 
-module fifo # (
+module ip_parser_input_fifo # (
     parameter DEPTH = 512,                      // Max num of words
     parameter ADDRW = $clog2(DEPTH)             // Num of bits needed
 )(
