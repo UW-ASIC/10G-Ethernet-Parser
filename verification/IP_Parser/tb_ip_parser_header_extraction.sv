@@ -152,7 +152,11 @@ module tb_ip_parser_header_extraction;
         send_beat(BEAT0, 1'b0);
         drive_beat(BEAT1, 1'b1); // tlast while beat_cnt == 1, header never completes
         // header_incomplete is combinational off the live beat_cnt, so check it
-        // while this beat is still on the bus, before the clock edge processes it
+        // while this beat is still on the bus, before the clock edge processes it.
+        // #1 lets the DUT's assign chain settle - Verilator doesn't re-run
+        // combinational logic just because we did a blocking assignment, only
+        // when simulation time actually advances
+        #1;
         check(header_incomplete == 1'b1, "header_incomplete asserted while the runt-ending beat is on the bus");
         @(posedge clk);
         check(capture_done == 1'b0, "capture_done never fires for a runt packet");
