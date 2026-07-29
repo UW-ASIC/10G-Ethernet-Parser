@@ -45,7 +45,7 @@ module block_sync_iso_tb;
         i_valid = 1;
         i_head  = head;
         @(posedge clk);
-        i_valid = 0;
+        // i_valid = 0;
     endtask
 
     // helper: drive N consecutive valid headers (01 or 10, alternating)
@@ -56,17 +56,14 @@ module block_sync_iso_tb;
     endtask
 
     task automatic send_header_with_errors(input int total, input int bad_count);
-        int positions[];
         bit is_bad[int];
+        real stride;
 
-        positions = new[total - 1];
-        foreach (positions[i]) positions[i] = i;
-        positions.shuffle();
 
-        for(int i = 0; i < bad_count - 1; i++) begin
-            is_bad[positions[i]] = 1'b1;
+        stride = real'(total) / real'(bad_count);
+        for (int i = 0; i < bad_count; i++) begin
+            is_bad[int'(i * stride)] = 1'b1;
         end
-        is_bad[total - 1] = 1'b1;
 
         for(int i = 0; i < total; i++) begin
             if(is_bad.exists(i)) begin
@@ -319,34 +316,42 @@ module block_sync_iso_tb;
     //   hold i_valid low for 10 cycles while i_serdes_v is high.
     //   verify o_slip does NOT fire (no valid header to evaluate).
     //   verify the internal counter does not advance.
-        task automatic test_i_valid_gating();
-            $display("\n[TEST 7] i_valid gating");
+task automatic test_i_valid_gating();
+    int current_count;
 
-            do_reset();
-            i_serdes_v = 1;
+    $display("\n[TEST 7] i_valid gating");
 
-            send_valid_headers(5);
-            i_valid = 0;
-            int current_count = dut.counter;
+    do_reset();
+    i_serdes_v = 1;
 
-            for (int i = 0; i < 10; i++) @(posedge clk);                
+    send_valid_headers(5);
+    i_valid = 0;
+    current_count = dut.counter;
 
-            if(o_slip == 1'b0) begin
-                $display("TEST PASSED: o_slip does not fire (no valid header to evaluate)");
-                pass_count++;
-            end else begin
-                $display("TEST FAILED: o_slip fires");
-                fail_count++;
-            end
-            
-            if(current_count == dut.counter) begin
-                $display("TEST PASSED: counter stays flat, does not advance");
-                pass_count++;
-            end else begin
-                $display("TEST FAILED: counter advances");
-                fail_count++;
-            end
-        endtask
+    for (int i = 0; i < 10; i++) begin
+        @(posedge clk);
+    end
+
+    if (o_slip == 1'b0) begin
+        $display("TEST PASSED: o_slip does not fire (no valid header to evaluate)");
+        pass_count++;
+    end else begin
+        $display("TEST FAILED: o_slip fires");
+        fail_count++;
+    end
+
+    if (current_count == dut.counter) begin
+        $display("TEST PASSED: counter stays flat, does not advance");
+        pass_count++;
+    end else begin
+        $display(
+            "TEST FAILED: counter advances from %0d to %0d",
+            current_count,
+            dut.counter
+        );
+        fail_count++;
+    end
+endtask
     // test 8: lock-loss-relock cycle
     //   lock -> lose lock via 65 bad headers -> relock with 64 good headers.
     //   verify the full round-trip works cleanly.
@@ -420,6 +425,9 @@ module block_sync_iso_tb;
             end
         endtask
     initial begin
+        $dumpfile("dump.vcd");
+        $dumpvars(0, block_sync_iso_tb);
+
         $display("==============================================");
         $display("  block_sync isolated testbench");
         $display("==============================================");
