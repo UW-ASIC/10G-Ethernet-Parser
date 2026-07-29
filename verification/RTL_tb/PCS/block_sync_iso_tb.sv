@@ -101,6 +101,8 @@ module block_sync_iso_tb;
 
             send_valid_headers(64);
 
+            @(posedge clk)
+
             if(o_lock == 1'b1) begin
                 $display("TEST PASSED: o_lock asserts after 64th header");
                 pass_count++;
@@ -153,11 +155,25 @@ module block_sync_iso_tb;
                 fail_count++;
             end
 
+            @(posedge clk);
+            
             if(dut.counter == '0) begin
-                $display("TEST PASSED: Counter resets, requires another 64 valid headers");
+                $display("TEST PASSED: Counter resets on invalid header");
                 pass_count++;
             end else begin
                 $display("TEST FAILED: Counter doesn't reset");
+                fail_count++;
+            end
+
+            send_valid_headers(64);
+
+            @(posedge clk);
+
+            if(o_lock == 1'b1) begin
+                $display("TEST PASSED: o_lock asserts after another 64 valid headers");
+                pass_count++;
+            end else begin
+                $display("TEST FAILED: o_lock not asserted after another 64 valid headers");
                 fail_count++;
             end
 
@@ -186,11 +202,12 @@ module block_sync_iso_tb;
                 end
 
                 i_valid = 1'b0;
-
                 @(posedge clk);
             end
-
+            
             send_valid_headers(64);
+            
+            @(posedge clk)
 
             if(o_lock == 1'b1) begin
                 $display("TEST PASSED: o_lock asserts after 64th header");
@@ -362,6 +379,7 @@ endtask
             i_serdes_v = 1;
 
             send_valid_headers(64);
+             @(posedge clk)
 
             if(o_lock == 1'b1) begin
                 $display("TEST PASSED: o_lock asserts after 64th header");

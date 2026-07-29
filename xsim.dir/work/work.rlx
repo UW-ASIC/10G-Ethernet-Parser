@@ -1,0 +1,7 @@
+0.7
+2020.2
+Nov  8 2024
+22:36:57
+C:/Users/Zenetics/OneDrive/Projects/UWASIC/10G-Ethernet-Parser-Fork/10G-Ethernet-Parser/RTL/PCS/block_sync.sv,1784066647,systemVerilog,,C:/Users/Zenetics/OneDrive/Projects/UWASIC/10G-Ethernet-Parser-Fork/10G-Ethernet-Parser/verification/RTL_tb/PCS/eth_frame_pkg.sv,,block_sync_rx,,,,,,,,
+C:/Users/Zenetics/OneDrive/Projects/UWASIC/10G-Ethernet-Parser-Fork/10G-Ethernet-Parser/verification/RTL_tb/PCS/block_sync_iso_tb.sv,1785332257,systemVerilog,,,,block_sync_iso_tb,,,,,,,,
+C:/Users/Zenetics/OneDrive/Projects/UWASIC/10G-Ethernet-Parser-Fork/10G-Ethernet-Parser/verification/RTL_tb/PCS/eth_frame_pkg.sv,1784155838,systemVerilog,,C:/Users/Zenetics/OneDrive/Projects/UWASIC/10G-Ethernet-Parser-Fork/10G-Ethernet-Parser/verification/RTL_tb/PCS/block_sync_iso_tb.sv,,eth_frame_pkg,,,,,,,,
