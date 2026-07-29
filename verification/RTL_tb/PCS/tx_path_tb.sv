@@ -163,25 +163,6 @@ module tx_path_tb;
     endtask
 
 
-
-    always @(posedge clk) begin // automatically reset parameters if reset called
-        if (!rstn) begin
-            cycle_ctr               <= 0;
-            accept_low_ctr           <= 0;
-            last_accept_low_cycle     <= -1;
-            acceptd                <= 1'b1;
-            test1backpressurefail  <= 1'b0;
-            t2acceptlowctr         <= 0;
-            t3acceptlowctr         <= 0;
-            t4acceptlowctr         <= 0;
-            t4_saved_valid         <= 1'b0;
-            t4_resume_valid        <= 1'b0;
-            t4_stall_seen          <= 1'b0;
-            t5serdeswordcount      <= 0;
-            t6serdeswordcount      <= 0;
-        end else begin
-            cycle_ctr <= cycle_ctr + 1;
-
 // --------------------------------------------------------------------------
     // this tb answers the question: does data survive the entire TX pipeline?
     //
@@ -226,11 +207,11 @@ module tx_path_tb;
 
 
     always @(posedge clk) begin
-        if (!rst_n) begin
+        if (!rstn) begin // reset all these parameters 
             cycle_ctr               <= 0;
             accept_low_ctr          <= 0;
             last_accept_low_cycle   <= -1;
-            accept_d                <= 1'b1;
+            accept_d                <= 1'b1; // assume previous cycle was accept high
             test1_backpressure_fail <= 1'b0;
 
             t2_accept_low_ctr       <= 0;
@@ -346,10 +327,10 @@ module tx_path_tb;
 
         if (accept_low_ctr == 0) begin
             $display("FAIL: accept never went low during idle stream");
-            failcount = failcount +1;
+            fail_count = fail_count +1;
         end else if (!test1backpressurefail) begin // testing done in monitor
             $display("PASS: Test 1");
-            passcount = passcount +1;
+            pass_count = pass_count +1;
         end
 
         // TEST 2
@@ -361,12 +342,12 @@ module tx_path_tb;
         
         if (nbeats <= 0) begin
             $display("FAIL: build_xgmii_beats returned %0d beats", nbeats);
-            failcount = failcount +1;
+            fail_count = fail_count +1;
         end else begin
             for (int i = 0; i < nbeats; i++) begin // drive frame through
                 drivebeatbp(frame_beats[i]);
                 end
-            passcount = passcount +1;
+            pass_count = pass_count +1;
         end
 
         clear_mac_inputs();
@@ -384,7 +365,7 @@ module tx_path_tb;
 
         if (nbeats1 <= 0 || nbeats2 <= 0) begin
             $display("FAIL: build_xgmii_beats failed in Test 3");
-            failcount = failcount +1;
+            fail_count = fail_count +1;
         end else begin
             for (int i = 0; i < nbeats1; i++) begin // drive first frame
                 drivebeatbp(frame_beats1[i]);
@@ -498,7 +479,7 @@ module tx_path_tb;
         clear_mac_inputs();
         repeat (5) @(posedge clk);
         t5_active = 0;
-        passcount++;
+        pass_count = pass_count +1;
 
         // TEST 6
         // 1 - internal state return to reset state 
@@ -515,7 +496,7 @@ module tx_path_tb;
         xgmii_beat_t t6_beats [0:63];
         int t6_nbeats;
 
-        payload_t t6_payload;
+        payload_t t6_payload; // reference payload
         for (int i = 0; i < 80; i++) begin
             t6_payload.bytes[i] = i[7:0];
         end
@@ -530,9 +511,9 @@ module tx_path_tb;
                 beat = idle_beat();
                 drive_beat_bp(beat);
             end
-            else begin
+            else begin // next 45 beats from reference pattern from t6_beats
                 int idx;
-                idx = (t6_total_beats_sent - 5) % t6_nbeats;
+                idx = (t6_total_beats_sent - 5) % t6_nbeats; // wraps t6 beats if index exceded
                 drive_beat_bp(t6_beats[idx]);
             end
             t6_total_beats_sent = t6_total_beats_sent + 1;
@@ -542,7 +523,7 @@ module tx_path_tb;
 
         t6_words_pre = t6_serdes_word_count;
         for (int i = 0; i < t6_words_pre; i++) begin
-            t6_log_pre[i] = t6_serdes_log[i];
+            t6_log_pre[i] = t6_serdes_log[i]; // record BEFORE the reset
         end
 
         $display("INFO: asserting reset after first 50 beats");
@@ -566,15 +547,13 @@ module tx_path_tb;
 
         repeat (5) @(posedge clk);
 
-        t6_words_post = t6_serdes_word_count;
+        t6_words_post = t6_serdes_word_count; // record AFTER reset
         for (int i = 0; i < t6_words_post; i++) begin
             t6_log_post[i] = t6_serdes_log[i];
         end
 
-        // ----------------------------
-        // recovery check
-        // ----------------------------
-        if (t6_words_pre != t6_words_post) begin
+
+        if (t6_words_pre != t6_words_post) begin // compare before - after
             $display("FAIL: Test 6 word-count mismatch pre=%0d post=%0d",
                     t6_words_pre, t6_words_post);
             fail_count = fail_count + 1;
@@ -585,8 +564,7 @@ module tx_path_tb;
 
             for (int i = 0; i < t6_words_pre; i++) begin
                 if (t6_log_pre[i] !== t6_log_post[i]) begin
-                    $display("FAIL: Test 6 mismatch at word %0d pre=%h post=%h",
-                            i, t6_log_pre[i], t6_log_post[i]);
+                    $display("FAIL: Test 6 mismatch at word %0d pre=%h post=%h", i, t6_log_pre[i], t6_log_post[i]);
                     mismatch = 1;
                     fail_count = fail_count + 1;
                     break;
@@ -601,7 +579,7 @@ module tx_path_tb;
 
         t6_active = 1'b0;
 
-        $display("Results: %0d PASSED, %0d FAILED", passcount, failcount);
+        $display("Results: %0d PASSED, %0d FAILED", passcount, fail_count);
         $finish;
     end
 endmodule
