@@ -1,1 +1,0 @@
-"block_sync_iso_tb" -s "dec_sim" --timescale "1ns/1ps" 

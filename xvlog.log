@@ -1,5 +1,0 @@
-INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/Zenetics/OneDrive/Projects/UWASIC/10G-Ethernet-Parser-Fork/10G-Ethernet-Parser/RTL/PCS/block_sync.sv" into library work
-INFO: [VRFC 10-311] analyzing module block_sync_rx
-INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/Zenetics/OneDrive/Projects/UWASIC/10G-Ethernet-Parser-Fork/10G-Ethernet-Parser/verification/RTL_tb/PCS/eth_frame_pkg.sv" into library work
-INFO: [VRFC 10-2263] Analyzing SystemVerilog file "C:/Users/Zenetics/OneDrive/Projects/UWASIC/10G-Ethernet-Parser-Fork/10G-Ethernet-Parser/verification/RTL_tb/PCS/block_sync_iso_tb.sv" into library work
-INFO: [VRFC 10-311] analyzing module block_sync_iso_tb
