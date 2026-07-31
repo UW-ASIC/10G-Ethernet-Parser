@@ -1,6 +1,6 @@
 # S26 Wrap-Up
 
-We have a packaged PCS IP under `FPGA/PCS_IP`. 
+We have a packaged PCS IP under `FPGA/PCS_IP`!
 
 To add it to an existing Vivado project, just run this from the Tcl console it pulls the IP straight from GitHub, so you don't need a local clone:
 
