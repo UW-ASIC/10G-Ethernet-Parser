@@ -1,5 +1,3 @@
-
-
 module descrambler #(
 
     parameter DATA_W = 64
@@ -18,7 +16,11 @@ module descrambler #(
     output logic [DATA_W + 1 : 0] o_descram_data   // 64 bit of descrambled data + 2 unchanged sync header bits: sent to decoder
    
 );
- 
+    // 66-bit block layout:
+    
+    // i_scram_data[1:0]  = sync header
+    // i_scram_data[65:2] = scrambled payload
+
     // scrambling polynomial: x^58 + x ^ 39 + 1;
 
     localparam I0 = 58;
@@ -39,24 +41,28 @@ module descrambler #(
     logic [57:0] state; //stores the last 58 bits, 0 being most recent.
     logic [DATA_W-1:0] descrambled; //descrambled data
     logic [DATA_W+1:0] total_descram; //descrambled data + header
+    logic [DATA_W-1:0] scrambled; //the scrambled input
+    
+    assign scrambled = i_scram_data[65:2];
+
     always_comb begin
         //for bits 0 to 38
         for(int i = 0; i<= 38; i++) begin
-            descrambled[i] = i_scram_data[i] 
+            descrambled[i] = scrambled[i] 
             ^state[38-i] 
             ^state[57-i]; 
         end
         //for bits 39 to 57
         for(int i = 39; i<=57; i++) begin
-            descrambled[i] = i_scram_data[i]
-            ^i_scram_data[i-39] //
+            descrambled[i] = scrambled[i]
+            ^scrambled[i-39] //
             ^state[57-i];
         end
         //for bits 58 to 63
         for(int i = 58; i <= 63; i++) begin
-            descrambled[i] = i_scram_data[i]
-            ^i_scram_data[i-39]
-            ^i_scram_data[i-58];
+            descrambled[i] = scrambled[i]
+            ^scrambled[i-39]
+            ^scrambled[i-58];
         end
     end
     // *: update state with state_next on each valid cycle
@@ -71,10 +77,10 @@ module descrambler #(
              if(i_valid) begin
                 //Store state (current input scram) in reverse order
                 for(int i = 0; i< 58; i++) begin
-                    state[i] <= i_scram_data[63-i];
+                    state[i] <= scrambled[63-i];
                 end
-                //Header + descrambled
-                total_descram <= {i_scram_data[65:64], descrambled};
+                //descrambled + header
+                total_descram <= { descrambled, i_scram_data[1:0]};
             end
         end
 
