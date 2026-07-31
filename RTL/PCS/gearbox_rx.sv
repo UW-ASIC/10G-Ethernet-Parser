@@ -60,7 +60,7 @@ module gearbox_rx #(
             if (dead) begin
           
                 dead       <= 1'b0;
-                has_output <= 1'b0;   // ← add this
+                has_output <= 1'b0;   
          
             end else begin
                 assembled  <= gear[127 - counter -: BLOCK_W];
@@ -68,6 +68,12 @@ module gearbox_rx #(
                 counter    <= next_counter;
                 dead       <= (next_counter < counter); // overflow = next cycle is dead
             end
+        end 
+        else begin
+       
+            has_output <= 1'b0;    // clear one cycle after lock drops
+            dead       <= 1'b1;    // reset to warmup state          
+            counter    <= 6'd0;
         end
     end
 
