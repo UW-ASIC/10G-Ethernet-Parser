@@ -33,6 +33,47 @@ module gearbox_rx #(
          naively. We will switch to directly using hardened fpga primitives (SRLC32E, MUXF9, MUXF8. MUXF7, etc.) to keep this efficient at 156.25 MHz.
      */
 
+
+    localparam SIZE = $clog2(DATA_W);
+    logic [SIZE-1  : 0] counter, next_counter;
+    logic init, init_next;
+    logic dead, has_output;
+    assign next_counter = (i_slip) ? (counter + 2'b11) : counter + 2'b10;
+    
+
+    logic [DATA_W - 1:0] barrel;
+
+    logic [65:0] assembled;
+
+    logic [2*DATA_W - 1 : 0] gear;
+
+
+    assign gear = {barrel, i_data};
+
+    always_ff @(posedge clk) begin
+        if (~rst_n) begin
+            counter    <= 6'd0;
+            dead       <= 1'b1;   // first cycle is warmup
+            has_output <= 1'b0;
+        end else if (i_pma_lock) begin
+            barrel <= i_data;     
+            if (dead) begin
+          
+                dead       <= 1'b0;
+                has_output <= 1'b0;   // ← add this
+         
+            end else begin
+                assembled  <= gear[127 - counter -: BLOCK_W];
+                has_output <= 1'b1;
+                counter    <= next_counter;
+                dead       <= (next_counter < counter); // overflow = next cycle is dead
+            end
+        end
+    end
+
+    assign o_data  = assembled;
+    assign o_valid = has_output & ~dead ;
+    assign o_head  = assembled[1:0];
     
     // input buffer: concatenation of previous cycle's i_data (stored in a register)
     //   with current cycle's i_data, giving us 128 bits to select from.
@@ -52,6 +93,5 @@ module gearbox_rx #(
     // implement the barrel shifter to extract 66 bits at the offset given by seq counter, utilize macros as much as possible. 
     // implement the sequence counter with slip and pma_lock handling
     // *: o_head is the bottom 2 bits of the barrel shifter output, sent out to block_sync for alignment correction. 
-
 
 endmodule
