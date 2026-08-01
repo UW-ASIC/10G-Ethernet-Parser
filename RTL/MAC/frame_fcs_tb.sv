@@ -92,7 +92,7 @@ module frame_fcs_tb;
             @(posedge clk);
             if (tvalid)
                 $display("t=%0t tdata=%h tkeep=%h tlast=%b tuser=%b", 
-                            $tim,, tdata, tkeep, tlast, tuser);
+                            $time, tdata, tkeep, tlast, tuser);
         end
         $finish;
     end
