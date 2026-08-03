@@ -60,7 +60,7 @@ module gearbox_rx #(
             if (dead) begin
           
                 dead       <= 1'b0;
-                has_output <= 1'b0;   
+                has_output <= 1'b0;  
          
             end else begin
                 assembled  <= gear[127 - counter -: BLOCK_W];

@@ -12,7 +12,7 @@
 // *: the PCS has no awareness of ethernet frame structure (MAC headers, ethertype,
 //    FCS, etc). it only sees XGMII beats: start characters, opaque data bytes,
 //    terminate characters, and idle characters. the utilities here reflect that —
-//    payload bytes are random and unstructured. frame-level semantics are the
+//    payload bytes are random and unstructured. thus frame-level semantics are the
 //    MAC's problem, not ours.
 
 package eth_frame_pkg;
@@ -52,8 +52,8 @@ package eth_frame_pkg;
 
     // --------------------------------------------------------------------------
     // payload storage. just a byte array + length.
-    // the PCS doesn't care what's inside — could be a valid ethernet frame,
-    // could be all 0xAA. we're testing encoding/scrambling/gearboxing, not protocol.
+    // the PCS doesn't care what's inside; could be a valid ethernet frame,
+    // could be all 0xAA. Doesn't concern us since we're testing encoding/scrambling/gearboxing.
     // --------------------------------------------------------------------------
     typedef struct {
         logic [7:0] bytes [0:1599];
@@ -88,9 +88,9 @@ package eth_frame_pkg;
     // build XGMII beat sequences from a payload.
     //
     // beat layout:
-    //   beat 0: start beat — data[0] = 0xFB (start char), data[7:1] = first 7 payload bytes
-    //   beat 1..N-1: data beats — 8 payload bytes each
-    //   beat N: terminate beat — remaining bytes + 0xFD (terminate char) + idle padding
+    //   beat 0: start beat -> data[0] = 0xFB (start char), data[7:1] = first 7 payload bytes
+    //   beat 1..N-1: data beats —> 8 payload bytes each
+    //   beat N: terminate beat —> remaining bytes + 0xFD (terminate char) + idle padding
     //
     // the terminate position depends on how many bytes are left after the last
     // full data beat. this determines which TERM_x block type the encoder should
@@ -215,69 +215,6 @@ package eth_frame_pkg;
         for (int i = 0; i < 8; i++)
             blk[2 + i*8 +: 8] = $urandom;
         return blk;
-    endfunction
-
-    // --------------------------------------------------------------------------
-    // build the full 66-bit block sequence for one frame:
-    //   start block (0x78) -> data blocks -> TERM_x block.
-    // this is what the encoder produces for a frame; use it to drive anything
-    // downstream of the encoder (scrambler, gearbox) with realistic traffic.
-    //
-    // block layouts follow clause 49 figure 49-7:
-    //   start:  sync=10, BT=0x78, bytes 0..6 at [65:10]
-    //   data:   sync=01, 8 bytes at [65:2]
-    //   TERM_k: sync=10, BT=TERM_k, k data bytes at [10 + 8j +: 8],
-    //           idle codes (7'h00) in the fixed C-field positions after the T,
-    //           unused gap bits zeroed.
-    //
-    // returns the number of blocks written.
-    // --------------------------------------------------------------------------
-    function automatic int build_frame_blocks(
-        input  payload_t              p,
-        output logic [BLOCK_W-1:0]    blocks [0:255]
-    );
-        int blk_idx = 0;
-        int byte_idx = 0;
-        int r;
-        logic [BLOCK_W-1:0] blk;
-        // C-field LSB positions for C1..C7 (C0 doesn't exist on terminate blocks)
-        int c_lsb [1:7] = '{17, 24, 31, 38, 45, 52, 59};
-        logic [BLOCK_TYPE_W-1:0] term_bt [0:7] = '{BT_TERM_0, BT_TERM_1, BT_TERM_2, BT_TERM_3,
-                                                   BT_TERM_4, BT_TERM_5, BT_TERM_6, BT_TERM_7};
-
-        // start block: bytes 0..6
-        blk = '0;
-        blk[1:0] = SYNC_CTRL;
-        blk[9:2] = BT_START;
-        for (int i = 0; i < 7; i++) begin
-            if (byte_idx < p.len) begin
-                blk[10 + i*8 +: 8] = p.bytes[byte_idx];
-                byte_idx++;
-            end
-        end
-        blocks[blk_idx++] = blk;
-
-        // full data blocks while 8+ bytes remain
-        while ((p.len - byte_idx) >= 8) begin
-            blk = '0;
-            blk[1:0] = SYNC_DATA;
-            for (int i = 0; i < 8; i++)
-                blk[2 + i*8 +: 8] = p.bytes[byte_idx++];
-            blocks[blk_idx++] = blk;
-        end
-
-        // terminate block: r remaining bytes -> TERM_r
-        r = p.len - byte_idx;
-        blk = '0;
-        blk[1:0] = SYNC_CTRL;
-        blk[9:2] = term_bt[r];
-        for (int i = 0; i < r; i++)
-            blk[10 + i*8 +: 8] = p.bytes[byte_idx++];
-        for (int c = r + 1; c <= 7; c++)
-            blk[c_lsb[c] +: 7] = CTRL_IDLE;
-        blocks[blk_idx++] = blk;
-
-        return blk_idx;
     endfunction
 
     // --------------------------------------------------------------------------
