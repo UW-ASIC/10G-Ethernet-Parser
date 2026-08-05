@@ -1,0 +1,1 @@
+# SV testbenches are still the preferred end-to-end verification method but feel free to use cocotb for individual designs. 
