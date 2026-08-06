@@ -1,6 +1,4 @@
 `timescale 1ns / 1ps
-// iverilog 13 cannot compile eth_frame_pkg.sv (unpacked structs unsupported).
-// nothing here needs the package, so skip it under icarus.
 `ifndef __ICARUS__
 `include "eth_frame_pkg.sv"
 `endif
@@ -65,33 +63,8 @@ module rx_path_tb;
     //    it processes everything the gearbox produces, even before lock.
     //    the decoder will flag errors on misaligned blocks via o_error.
     //    think about whether this is the right choice.
-    //
-    // ANSWER (test 1 + test 4 evidence): during acquisition it costs 190 spurious
-    // o_error pulses and nothing else. during a SERDES DROPOUT it is a real defect:
-    // gearbox_rx freezes instead of clearing o_valid, so stale blocks reach the MAC
-    // flagged valid. see test 4 check 3.
-    // --------------------------------------------------------------------------
-
-    // --------------------------------------------------------------------------
-    // remote TX stimulus generator
-    //
-    //   tests 1/2/4:  tb drives tx_block directly       (use_encoder = 0)
-    //   tests 3/5/6:  tb drives XGMII beats -> encoder  (use_encoder = 1)
-    //
-    // full chain: [beats ->] encoder -> scrambler -> gearbox_tx -> serdes_data
-    //
-    // scrambling is required, not cosmetic. an unscrambled idle stream repeats
-    // every 66 bits, and offsets 1, 2 and 6 into that pattern yield a valid-looking
-    // sync header on EVERY block -> block_sync counts 64 in a row and false-locks
-    // at the wrong alignment. scrambled payload makes a wrong offset produce ~50%
-    // bad headers, so only the true alignment can accumulate 64 good headers.
-    //
-    // tx_valid = tx_accept holds the block whenever the tx gearbox is full
-    // (1 cycle in 33). the scrambler's state only advances on i_valid, so the same
-    // block is re-presented and consumed on the next cycle.
-    // --------------------------------------------------------------------------
     logic [BLOCK_W - 1 : 0] tx_block;        // direct block source (tests 1/2/4)
-    logic [BLOCK_W - 1 : 0] tx_enc_block;    // encoder output    (tests 3/5/6)
+    logic [BLOCK_W - 1 : 0] tx_enc_block;    // encoder output      (tests 3/5/6)
     logic                    tx_enc_valid;
     logic [BLOCK_W - 1 : 0] tx_scram_in;
     logic                    use_encoder;
@@ -259,23 +232,6 @@ module rx_path_tb;
     // blocks. the descrambler will output garbage for the first ~1 block while
     // its LFSR converges, but after that it should recover. this lets you test
     // gearbox + block_sync without worrying about scrambling correctness.
-    //
-    // CHOSEN: approach (a). do NOT skip scrambling — an unscrambled idle stream
-    // lets block_sync false-lock at the wrong offset (the 66-bit idle pattern has
-    // offsets 1, 2 and 6 that look like valid headers on every single block), so
-    // the test would pass for the wrong reason.
-    // --------------------------------------------------------------------------
-
-    // --------------------------------------------------------------------------
-    // XGMII beat construction (local replacement for eth_frame_pkg::build_xgmii_beats,
-    // which is unreachable under icarus). parallel arrays instead of a struct array.
-    //
-    // deviation from the package version: its trailing standalone-terminate guard is
-    // (len % 7) == 0, which is wrong. beat 0 carries 7 payload bytes and every later
-    // beat carries 8, so the payload lands exactly on a beat boundary when
-    // len == 7 (mod 8). this version instead emits a standalone terminate beat
-    // whenever the loop ended without one, which is correct for every length.
-    // --------------------------------------------------------------------------
     logic [DATA_W - 1 : 0] beat_data  [0:MAX_BEATS-1];
     logic [7:0]            beat_ctrl  [0:MAX_BEATS-1];
     logic [7:0]            beat_keep  [0:MAX_BEATS-1];
@@ -415,7 +371,7 @@ module rx_path_tb;
         end
     endtask
 
-    // driven-beat log, for comparing the whole stream in test 5
+    // driven-beat log for test 5. written only from the test thread.
     logic [DATA_W - 1 : 0] exp_data  [0:MAX_EXP-1];
     logic [7:0]            exp_ctrl  [0:MAX_EXP-1];
     logic [7:0]            exp_keep  [0:MAX_EXP-1];
@@ -452,9 +408,14 @@ module rx_path_tb;
     endtask
 
     // --------------------------------------------------------------------------
-    // decoder output capture
+    // decoder output capture.
+    //
+    // cap_count and the cap_* arrays are driven ONLY by the monitor below. tests
+    // request a reset with the cap_clear pulse rather than assigning cap_count from
+    // the test thread, so there is exactly one driver.
     // --------------------------------------------------------------------------
     bit                    cap_en;
+    bit                    cap_clear;
     int                    cap_count;
     logic [DATA_W - 1 : 0] cap_data  [0:MAX_CAP-1];
     logic [7:0]            cap_ctrl  [0:MAX_CAP-1];
@@ -463,8 +424,18 @@ module rx_path_tb;
     bit                    cap_term  [0:MAX_CAP-1];
     bit                    cap_err   [0:MAX_CAP-1];
 
+    task automatic capture_restart();
+        begin
+            cap_en    = 1'b0;
+            cap_clear = 1'b1;
+            @(posedge clk);
+            cap_clear = 1'b0;
+            cap_en    = 1'b1;
+        end
+    endtask
+
     // --------------------------------------------------------------------------
-    // monitors (shared across tests; per-test counters are gated by t<N>_active)
+    // monitors (shared across tests; per-test counters are gated by their own flags)
     // --------------------------------------------------------------------------
     int  cycle_ctr;
     bit  t1_active;
@@ -475,6 +446,16 @@ module rx_path_tb;
     bit  t1_slip_after_lock;
     bit  t1_lock_dropped;
     bit  t1_x_seen;
+
+    // test 4 gap instrumentation, sampled in the monitor so there is no ambiguity
+    // about pre- vs post-edge values
+    bit  t4_in_gap;
+    bit  t4_clear;
+    int  t4_gap_cycles;
+    int  t4_gb_valid;      // gearbox_rx  o_valid high during the gap
+    int  t4_ds_valid;      // descrambler o_valid high during the gap
+    int  t4_dec_valid;     // decoder     o_valid high during the gap
+    int  t4_lock_cycles;   // sync_lock   high during the gap
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
@@ -498,9 +479,23 @@ module rx_path_tb;
                 end
             end
 
-            // cap_count is only ever cleared while cap_en is low, so there is no
-            // blocking/non-blocking race on it.
-            if (cap_en && o_valid && cap_count < MAX_CAP) begin
+            if (t4_clear) begin
+                t4_gap_cycles  <= 0;
+                t4_gb_valid    <= 0;
+                t4_ds_valid    <= 0;
+                t4_dec_valid   <= 0;
+                t4_lock_cycles <= 0;
+            end else if (t4_in_gap) begin
+                t4_gap_cycles <= t4_gap_cycles + 1;
+                if (gearbox_valid) t4_gb_valid    <= t4_gb_valid    + 1;
+                if (descram_valid) t4_ds_valid    <= t4_ds_valid    + 1;
+                if (o_valid)       t4_dec_valid   <= t4_dec_valid   + 1;
+                if (sync_lock)     t4_lock_cycles <= t4_lock_cycles + 1;
+            end
+
+            if (cap_clear) begin
+                cap_count <= 0;
+            end else if (cap_en && o_valid && cap_count < MAX_CAP) begin
                 cap_data[cap_count]  <= o_data;
                 cap_ctrl[cap_count]  <= o_ctrl;
                 cap_keep[cap_count]  <= o_keep;
@@ -531,12 +526,11 @@ module rx_path_tb;
                (cap_err[ci]   === 1'b0);
     endfunction
 
-    task automatic show_mismatch(input int ci, input string what);
+    task automatic show_captured(input int ci);
         begin
             $display("        captured[%0d]: data=%h ctrl=%h keep=%h start=%b term=%b err=%b",
                      ci, cap_data[ci], cap_ctrl[ci], cap_keep[ci],
                      cap_start[ci], cap_term[ci], cap_err[ci]);
-            $display("        expected %s", what);
         end
     endtask
 
@@ -765,9 +759,7 @@ module rx_path_tb;
 
             // settle, then start capturing decoder output
             for (i = 0; i < 8; i++) drive_idle_beat();
-            cap_en    = 1'b0;
-            cap_count = 0;
-            cap_en    = 1'b1;
+            capture_restart();
 
             // idles, the frame, then idles
             for (i = 0; i < 4; i++)          drive_idle_beat();
@@ -801,7 +793,7 @@ module rx_path_tb;
                     if (!cap_matches_beat(first_start + i, i)) begin
                         if (mism == 0) begin
                             $display("  FAIL: beat %0d of the frame does not match", i);
-                            show_mismatch(first_start + i, "");
+                            show_captured(first_start + i);
                             $display("        expected     : data=%h ctrl=%h keep=%h start=%b term=%b",
                                      beat_data[i], beat_ctrl[i], beat_keep[i],
                                      beat_start[i], beat_term[i]);
@@ -826,25 +818,26 @@ module rx_path_tb;
     endtask
 
     // test 4: serdes_valid drop and recovery
-    //   lock, stream data, drop serdes_valid for 20 cycles, reassert.
+    //   lock, stream data, drop serdes_valid for an extended window, reassert.
     //   verify block_sync loses lock, then re-acquires it.
-    //   verify the decoder doesn't produce valid output during the gap.
+    //   verify o_valid drops and STAYS low through the whole path during the gap.
+    //
+    // o_valid legitimately lags i_pma_lock, so the checks below allow a latency
+    // budget rather than demanding an instant drop:
+    //   gearbox_rx  registers has_output                     -> <= 1 gap cycle high
+    //   descrambler registers o_valid <= i_valid (1 more)    -> <= 2 gap cycles high
+    //   decoder     o_valid = i_valid, combinational          -> <= 2 gap cycles high
+    // anything beyond that is a stuck valid, not pipeline latency.
     task automatic test4_serdes_drop();
         int gap_cycles;
-        int beats_in_gap;
-        int errs_in_gap;
         int relock_cycle;
-        bit lock_dropped;
         bit relocked;
         bit ok;
         begin
             $display("\nTEST 4: serdes_valid drop and recovery");
 
-            gap_cycles   = 20;
-            beats_in_gap = 0;
-            errs_in_gap  = 0;
+            gap_cycles   = 40;
             relock_cycle = -1;
-            lock_dropped = 1'b0;
             relocked     = 1'b0;
 
             tx_block = rx_idle_block();
@@ -863,16 +856,15 @@ module rx_path_tb;
             // stream with lock held so we start from a settled state
             repeat (50) @(posedge clk);
 
-            // ---- drop the serdes ----
+            // ---- drop the serdes for an extended window ----
+            t4_clear = 1'b1;
+            @(posedge clk);
+            t4_clear = 1'b0;
+
             serdes_valid = 1'b0;
-            for (int i = 0; i < gap_cycles; i++) begin
-                @(posedge clk);
-                if (!sync_lock) lock_dropped = 1'b1;
-                if (o_valid) begin
-                    beats_in_gap++;
-                    if (o_error) errs_in_gap++;
-                end
-            end
+            t4_in_gap    = 1'b1;
+            repeat (gap_cycles) @(posedge clk);
+            t4_in_gap    = 1'b0;
 
             // ---- reassert and re-acquire ----
             serdes_valid = 1'b1;
@@ -889,10 +881,12 @@ module rx_path_tb;
             // ---- results ----
             ok = 1'b1;
 
-            if (lock_dropped) begin
-                $display("  CHECK 1 (lock drops during gap):        PASS");
+            if (t4_lock_cycles <= 1) begin
+                $display("  CHECK 1 (lock drops during gap):        PASS (%0d/%0d gap cycles high)",
+                         t4_lock_cycles, t4_gap_cycles);
             end else begin
-                $display("  CHECK 1 (lock drops during gap):        FAIL - sync_lock stayed high");
+                $display("  CHECK 1 (lock drops during gap):        FAIL - sync_lock high for %0d of %0d gap cycles",
+                         t4_lock_cycles, t4_gap_cycles);
                 ok = 1'b0;
             end
 
@@ -904,15 +898,33 @@ module rx_path_tb;
                 ok = 1'b0;
             end
 
-            if (beats_in_gap == 0) begin
-                $display("  CHECK 3 (no decoder output during gap): PASS");
+            if (t4_gb_valid <= 1) begin
+                $display("  CHECK 3a (gearbox o_valid drops):       PASS (%0d/%0d gap cycles high)",
+                         t4_gb_valid, t4_gap_cycles);
             end else begin
-                $display("  CHECK 3 (no decoder output during gap): FAIL - %0d valid beats in a %0d cycle gap (%0d flagged o_error)",
-                         beats_in_gap, gap_cycles, errs_in_gap);
-                $display("        gearbox_rx freezes rather than clearing o_valid when i_pma_lock");
-                $display("        drops (no else branch on the i_pma_lock if), and neither the");
-                $display("        descrambler nor the decoder gates o_valid on sync_lock. the MAC");
-                $display("        would see stale blocks presented as valid data.");
+                $display("  CHECK 3a (gearbox o_valid drops):       FAIL - high for %0d of %0d gap cycles",
+                         t4_gb_valid, t4_gap_cycles);
+                $display("        gearbox_rx has no else on the i_pma_lock branch, so its");
+                $display("        registers freeze instead of clearing has_output.");
+                ok = 1'b0;
+            end
+
+            if (t4_ds_valid <= 2) begin
+                $display("  CHECK 3b (descrambler o_valid drops):   PASS (%0d/%0d gap cycles high)",
+                         t4_ds_valid, t4_gap_cycles);
+            end else begin
+                $display("  CHECK 3b (descrambler o_valid drops):   FAIL - high for %0d of %0d gap cycles",
+                         t4_ds_valid, t4_gap_cycles);
+                ok = 1'b0;
+            end
+
+            if (t4_dec_valid <= 2) begin
+                $display("  CHECK 3c (decoder o_valid drops):       PASS (%0d/%0d gap cycles high)",
+                         t4_dec_valid, t4_gap_cycles);
+            end else begin
+                $display("  CHECK 3c (decoder o_valid drops):       FAIL - high for %0d of %0d gap cycles",
+                         t4_dec_valid, t4_gap_cycles);
+                $display("        stale blocks reach the MAC flagged valid during a dropout.");
                 ok = 1'b0;
             end
 
@@ -975,9 +987,7 @@ module rx_path_tb;
             end
 
             for (i = 0; i < 8; i++) drive_idle_beat();
-            cap_en    = 1'b0;
-            cap_count = 0;
-            cap_en    = 1'b1;
+            capture_restart();
 
             while (total < 500) begin
                 // 1..8 idle beats
@@ -1049,7 +1059,7 @@ module rx_path_tb;
                     if (!cap_matches_exp(cap_first + i, exp_first + i)) begin
                         if (mism == 0) begin
                             $display("  FAIL: stream diverges at offset %0d after the first start", i);
-                            show_mismatch(cap_first + i, "");
+                            show_captured(cap_first + i);
                             $display("        expected     : data=%h ctrl=%h keep=%h start=%b term=%b",
                                      exp_data[exp_first + i], exp_ctrl[exp_first + i],
                                      exp_keep[exp_first + i], exp_start[exp_first + i],
@@ -1187,10 +1197,12 @@ module rx_path_tb;
         pass_count  = 0;
         fail_count  = 0;
         t1_active   = 1'b0;
+        t4_in_gap   = 1'b0;
+        t4_clear    = 1'b0;
         use_encoder = 1'b0;
         inject_mask = '0;
         cap_en      = 1'b0;
-        cap_count   = 0;
+        cap_clear   = 1'b0;
         exp_count   = 0;
         tx_block    = rx_idle_block();
         clear_xgmii_idle();
