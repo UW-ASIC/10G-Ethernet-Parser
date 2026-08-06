@@ -428,7 +428,11 @@ module rx_path_tb;
         begin
             cap_en    = 1'b0;
             cap_clear = 1'b1;
-            @(posedge clk);
+            // hold the pulse across two edges. deasserting right after a single edge
+            // races with the monitor sampling cap_clear at that same edge: both are
+            // scheduled in the active region in arbitrary order, and if this thread
+            // wins, the clear is silently lost.
+            repeat (2) @(posedge clk);
             cap_clear = 1'b0;
             cap_en    = 1'b1;
         end
@@ -858,7 +862,7 @@ module rx_path_tb;
 
             // ---- drop the serdes for an extended window ----
             t4_clear = 1'b1;
-            @(posedge clk);
+            repeat (2) @(posedge clk);   // same sampling race as capture_restart()
             t4_clear = 1'b0;
 
             serdes_valid = 1'b0;
